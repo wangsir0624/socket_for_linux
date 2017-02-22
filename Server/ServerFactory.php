@@ -27,17 +27,16 @@ class ServerFactory {
         $schema = substr($uri, 0, strpos($uri, "//"));
         $address = substr($uri, strpos($uri, "//")+2);
         list($ip, $port) = explode(':', $address);
-        echo $port;
 
         //如果uri不符合规则，则跑出InvalidAugumentException
        if(empty($schema) || empty($ip) || empty($port)) {
-            throw new InvalidArgumentException('参数错误！');
+            throw new InvalidArgumentException('the argument is not correct.');
         }
 
         //根据shema，实例化对应的服务器类
         $serverName = @self::$types[$schema];
         if(empty($serverName)) {
-            throw new RuntimeException('不支持的服务器类型！');
+            throw new RuntimeException('unsupported server type.');
         }
 
         return new $serverName($ip, $port);
