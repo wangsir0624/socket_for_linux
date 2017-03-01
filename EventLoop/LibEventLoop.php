@@ -176,12 +176,14 @@ class LibEventLoop implements EventLoopInterface {
      * @param $key
      */
     private function timerCallback($fd, $events, $key) {
-        call_user_func($this->timers[$key][3], null, EV_TIMEOUT, $this->timers[$key][4]);
+        call_user_func($this->timers[$key][3], $this->timers[$key][1], EV_TIMEOUT, $this->timers[$key][4]);
 
-        if($this->timers[$key][2] == self::EV_TIMER) {
-            event_add($this->timers[$key][0], $this->timers[$key][1] * 1000000);
-        } else {
-            $this->delete($key, self::EV_TIMER_ONCE);
+        if(!empty($this->timers[$key])) {
+            if ($this->timers[$key][2] == self::EV_TIMER) {
+                event_add($this->timers[$key][0], $this->timers[$key][1] * 1000000);
+            } else {
+                $this->delete($key, self::EV_TIMER_ONCE);
+            }
         }
     }
 
