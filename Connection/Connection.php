@@ -1,6 +1,7 @@
 <?php
 namespace Connection;
 
+use EventLoop\EventLoopInterface;
 use Server\ServerInterface;
 
 class Connection implements ConnectionInterface {
@@ -16,6 +17,14 @@ class Connection implements ConnectionInterface {
      */
     public $server;
 
+    public $recv_buffer = '';
+
+    public $recv_buffer_size = 1048576;
+
+    private $current_package_size;
+
+    private $max_package_size = 1048576;
+
     /**
      * 构造函数
      * @param ServerInterface $server
@@ -30,36 +39,43 @@ class Connection implements ConnectionInterface {
                 call_user_func($this->server->onError, $this, "create connection to $peername failed.");
             }
         }
+
+        stream_set_read_buffer($this->stream, 0);
     }
 
     /**
      * 发送数据
      * @buffer
      */
-    public function sendMsg($buffer) {
-        $len = strlen($buffer);
-        $writeLen = 0;
-        while(($data = fwrite($this->stream, substr($buffer, $writeLen), $len-$writeLen))) {
-            $writeLen += $data;
-            if($writeLen >= $len) {
-                break;
+    public function send($buffer, $raw = false) {
+        if($buffer) {
+            if(!$raw) {
+                $protocol = $this->server->protocol;
+                $buffer = $protocol::encode($buffer, $this);
             }
+
+            $len = strlen($buffer);
+            $writeLen = 0;
+            while (($data = fwrite($this->stream, substr($buffer, $writeLen), $len - $writeLen))) {
+                $writeLen += $data;
+                if ($writeLen >= $len) {
+                    break;
+                }
+            }
+
+            return $writeLen;
         }
 
-        return $writeLen;
+        return 0;
     }
 
     /**
      * 关闭连接
      */
-    public function handleClose() {
-        if(is_callable($this->server->onClose)) {
-            call_user_func($this->server->onClose, $this);
-        }
-
+    public function close() {
         $this->server->connections->detach($this);
 
-        $this->server->loop->removeReadStream($this->stream);
+        $this->server->loop->delete($this->stream, EventLoopInterface::EV_READ);
 
         fclose($this->stream);
     }
@@ -68,14 +84,23 @@ class Connection implements ConnectionInterface {
      * 连接接收到数据时调用的回调函数
      */
     public function handleMessage() {
-        $message = fread($this->stream, 1024);
+        $buffer = fread($this->stream, $this->recv_buffer_size);
 
-        //触发回调函数
-        if($message == '') {
-            $this->handleClose();
-        } else {
-            if (is_callable($this->server->onMessage)) {
-                call_user_func($this->server->onMessage, $this, $message);
+        $this->recv_buffer .= $buffer;
+
+        $protocol = $this->server->protocol;
+
+        $this->current_package_size = $protocol::input($this->recv_buffer, $this);
+
+        if($this->current_package_size != 0) {
+            $buffer = substr($this->recv_buffer, 0, $this->current_package_size);
+            $this->recv_buffer = substr($this->recv_buffer, $this->current_package_size);
+            $this->current_package_size = 0;
+
+            $protocol::decode($buffer, $this);
+
+            if(!empty($this->recv_buffer)) {
+                call_user_func(array($this, 'handleMessage'));
             }
         }
     }

@@ -1,5 +1,6 @@
 <?php
 namespace Server;
+
 use Connection\ConnectionInterface;
 use EventLoop\EventLoopInterface;
 use EventLoop\StreamSelectLoop;
@@ -7,8 +8,20 @@ use RuntimeException;
 use Connection\Connection;
 use SplObjectStorage;
 use EventLoop\EventLoopFactory;
+use Protocol\WebSocketProtocol;
+use Protocol\TextProtocol;
 
-class Server implements ServerInterface {
+class Server {
+    /**
+     * 支持的服务器类型
+     * 为一个数组映射，键为shema，值为对应的服务器类名
+     * @const array
+     */
+    protected static $protocols = array(
+        'tcp' => TextProtocol::class,
+        'ws' => WebSocketProtocol::class
+    );
+
     /**
      * @var stream
      * 服务器套接字
@@ -78,15 +91,41 @@ class Server implements ServerInterface {
     public $connectionTimeout = 5;
 
     /**
-     * 构造函数
-     * @param string $ip 服务器IP地址
-     * @param int $port 服务器端口
+     * Application protocol classname
+     * @var string
      */
-    public function __construct($ip, $port) {
+    public $protocol;
+
+    /**
+     * 创建服务器实例
+     * @param string uri 此参数形式为scheme//ip:port 例如tcp://127.0.0.1:8000
+     * @return ServerInterface
+     */
+    public function __construct($uri) {
+        /**
+         * uri由schema，IP和port组成
+         *解析uri
+         */
+        $schema = substr($uri, 0, strpos($uri, "://"));
+        $address = substr($uri, strpos($uri, "://")+3);
+        list($ip, $port) = explode(':', $address);
+
+        //如果uri不符合规则，则跑出InvalidAugumentException
+        if(empty($schema) || empty($ip) || empty($port)) {
+            throw new InvalidArgumentException('the argument is not correct.');
+        }
+
+        //根据shema，实例化对应的服务器类
+        $protocolName = @self::$protocols[$schema];
+        if(empty($protocolName)) {
+            throw new RuntimeException('unsupported application protocol.');
+        }
+
         $this->ip = $ip;
         $this->port = $port;
-        $this->connections = new SplObjectStorage();
+        $this->protocol = $protocolName;
         $this->loop = EventLoopFactory::createLoop();
+        $this->connections = new SplObjectStorage();
     }
 
     /**
@@ -102,7 +141,7 @@ class Server implements ServerInterface {
         $this->stream = $stream;
         stream_set_blocking($this->stream, 0);
 
-        $this->loop->addReadStream($stream, array($this, 'handleConnection'));
+        $this->loop->add($this->stream, EventLoopInterface::EV_READ, array($this, 'handleConnection'));
         $this->loop->run();
     }
 
@@ -114,11 +153,7 @@ class Server implements ServerInterface {
         $this->connections->attach($connection);
         stream_set_blocking($connection->stream, 0);
 
-        $this->loop->addReadStream($connection->stream, array($connection, 'handleMessage'));
-
-        if(is_callable($this->onConnection)) {
-            call_user_func($this->onConnection, $connection);
-        }
+        $this->loop->add($connection->stream, EventLoopInterface::EV_READ, array($connection, 'handleMessage'));
     }
 
     /**
