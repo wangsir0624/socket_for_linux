@@ -23,8 +23,6 @@ class Connection implements ConnectionInterface {
 
     private $current_package_size;
 
-    private $max_package_size = 1048576;
-
     /**
      * 构造函数
      * @param ServerInterface $server

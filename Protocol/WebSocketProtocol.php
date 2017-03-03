@@ -11,6 +11,11 @@ class WebSocketProtocol implements ProtocolInterface {
     const MIN_HEAD_LEN = 2;
 
     /**
+     * maximun bytes of websocket frame header
+     */
+    const MAX_HEAD_LEN = 14;
+
+    /**
      * opcode value which means the frame is continuing
      * @const
      */
@@ -63,17 +68,11 @@ class WebSocketProtocol implements ProtocolInterface {
             $buffer = $connection->recv_buffer;
         }
 
+        $buffer = substr($buffer, $connection->tmp_all_frame_len);
+
         //wait for more data
         if(strlen($buffer) < self::MIN_HEAD_LEN) {
             return 0;
-        }
-
-        if($connection->current_websocket_frame_length > 0) {
-            if($connection->current_websocket_frame_length > strlen($buffer)) {
-                return 0;
-            }
-
-            return $connection->current_websocket_frame_length;
         }
 
         //parse the websocket protocol frame
@@ -111,6 +110,26 @@ class WebSocketProtocol implements ProtocolInterface {
             $data_len = $pack['c1']*4294967296 + $pack['c2'];
         }
 
+        $connection->tmp_all_frame_len += $head_len + $data_len;
+
+        if($connection->tmp_all_frame_len > strlen($connection->recv_buffer)) {
+            return 0;
+        }
+
+        if($connection->tmp_all_frame_len + self::MAX_HEAD_LEN >= $connection->recv_buffer_size) {
+            if(is_callable($connection->server->onError)) {
+                call_user_func($connection->server->onError, $connection, 'the websocket data length is beyond the maximun limit.');
+            }
+
+            $connection->close();
+
+            return 0;
+        }
+
+        if(!$is_fin_frame) {
+            return self::input($connection->recv_buffer, $connection);
+        }
+
         switch($opcode) {
             case self::WEBSOCKET_TYPE_CONTINUE:
                 break;
@@ -125,6 +144,8 @@ class WebSocketProtocol implements ProtocolInterface {
                 }
 
                 $connection->close();
+
+                return 0;
                 break;
             case self::WEBSOCKET_TYPE_PING:
                 break;
@@ -137,20 +158,14 @@ class WebSocketProtocol implements ProtocolInterface {
                 }
 
                 $connection->close();
+
+                return 0;
                 break;
         }
 
-        //TODO: 如果这一帧不是结束帧
-
-        $current_frame_length = $head_len + $data_len;
-        //if the buffer lenth is shorten than the current frame lenth, wait for more data
-        if($current_frame_length > strlen($buffer)) {
-            $connection->current_websocket_frame_length = $current_frame_length;
-
-            return 0;
-        }
-
-        return $current_frame_length;
+        $all_frame_len = $connection->tmp_all_frame_len;
+        $connection->tmp_all_frame_len = 0;
+        return $all_frame_len;
     }
 
     /**
@@ -182,33 +197,44 @@ class WebSocketProtocol implements ProtocolInterface {
      * @return string  returns the original data
      */
     public static function decode($buffer, ConnectionInterface $connection) {
+        $buffer = substr($buffer, $connection->tmp_frame_len);
+
         $data_len = ord($buffer{1}) & 127;
         $is_mask = ord($buffer{1}) >> 7;
+        $is_fin_frame = ord($buffer{0}) >> 7;
 
         if($data_len == 126) {
             $extra_payload_length = 2;
-            $mask_key = substr($buffer, 4, 4);
-            $data = substr($buffer, 8);
+            $pack = unpack('n/ntotal_len', $buffer);
+            $data_len = $pack['total_len'];
         } else if($data_len == 127) {
             $extra_payload_length = 8;
-            $mask_key = substr($buffer, 10, 4);
-            $data = substr($buffer, 14);
+            $pack = unpack('n/N2c', $buffer);
+            $data_len = $pack['c1']*4294967296 + $pack['c2'];
         } else {
             $extra_payload_length = 0;
-            $mask_key = substr($buffer, 2, 4);
-            $data = substr($buffer, 6);
         }
 
         $original = '';
         if($is_mask) {
             $mask_key = substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length, 4);
-            $data = substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length + 4);
+            $data = substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length + 4, $data_len);
             for($i = 0; $i < strlen($data); $i++) {
                 $original .= $data{$i} ^ $mask_key[$i % 4];
             }
         } else {
-            $original = substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length);
+            $original = substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length, $data_len);
         }
+
+        if(!$is_fin_frame) {
+            $connection->tmp_data .= $original;
+            $connection->tmp_frame_len += $data_len;
+
+            self::decode($connection->recv_buffer, $connection);
+        }
+
+        $connection->tmp_data .= '';
+        $connection->tmp_frame_len += 0;
 
         if($original) {
             if (is_callable($connection->server->onMessage)) {
@@ -259,7 +285,9 @@ class WebSocketProtocol implements ProtocolInterface {
 
             if($connection->send($handshake_response, true)) {
                 $connection->handshaked = true;
-                $connection->current_websocket_frame_length = 0;
+                $connection->tmp_all_frame_len = 0;
+                $connection->tmp_frame_len = 0;
+                $connection->tmp_data = '';
 
                 $header_string = substr($connection->recv_buffer, 0, $header_length);
                 $connection->recv_buffer = substr($connection->recv_buffer, $header_length);
