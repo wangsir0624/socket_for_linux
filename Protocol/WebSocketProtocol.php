@@ -68,18 +68,18 @@ class WebSocketProtocol implements ProtocolInterface {
             $buffer = $connection->recv_buffer;
         }
 
+        //because some websocket requests may consist of more than one frame, we can get the total length by recursive
         $buffer = substr($buffer, $connection->tmp_all_frame_len);
 
-        //wait for more data
+        //if the connection read buffer is shorter than the websocket minimun header length, wait for more data
         if(strlen($buffer) < self::MIN_HEAD_LEN) {
             return 0;
         }
 
-        //parse the websocket protocol frame
+        //parse the websocket frame
         $data_len = ord($buffer{1}) & 127;
         $is_mask = ord($buffer{1}) >> 7;
         $is_fin_frame = ord($buffer{0}) >> 7;
-        $opcode = ord($buffer{0}) & 0b00001111;
         $head_len = self::MIN_HEAD_LEN;
 
         //if the data is masked, the frame head contains 4 bytes for the mask key
@@ -87,9 +87,7 @@ class WebSocketProtocol implements ProtocolInterface {
             $head_len += 4;
         }
 
-        /**
-         * if the data_len is 126, the frame head container 2 more bytes for data lenth. and when the data_len is 127, the head contains 8 bytes.
-         */
+        //if the data_len is 126, the frame head container 2 more bytes for data length. and when the data_len is 127, the head contains 8 more bytes
         if($data_len == 126) {
             $head_len += 2;
 
@@ -110,15 +108,15 @@ class WebSocketProtocol implements ProtocolInterface {
             $data_len = $pack['c1']*4294967296 + $pack['c2'];
         }
 
-        $connection->tmp_all_frame_len += $head_len + $data_len;
+        $all_frame_len = $connection->tmp_all_frame_len +  $head_len + $data_len;
 
-        if($connection->tmp_all_frame_len > strlen($connection->recv_buffer)) {
+        if($all_frame_len > strlen($connection->recv_buffer)) {
             return 0;
         }
 
-        if($connection->tmp_all_frame_len + self::MAX_HEAD_LEN >= $connection->recv_buffer_size) {
+        if($all_frame_len + self::MAX_HEAD_LEN >= $connection->recv_buffer_size) {
             if(is_callable($connection->server->onError)) {
-                call_user_func($connection->server->onError, $connection, 'the websocket data length is beyond the maximun limit.');
+                call_user_func($connection->server->onError, $connection, 'the websocket data length exceeds the maximun limit.');
             }
 
             $connection->close();
@@ -126,44 +124,12 @@ class WebSocketProtocol implements ProtocolInterface {
             return 0;
         }
 
+        //if the websocket is made of more than one frame, we must get the total length recursively
         if(!$is_fin_frame) {
+            $connection->tmp_all_frame_len = $all_frame_len;
             return self::input($connection->recv_buffer, $connection);
         }
 
-        switch($opcode) {
-            case self::WEBSOCKET_TYPE_CONTINUE:
-                break;
-            case self::WEBSOCKET_TYPE_TEXT:
-                break;
-            case self::WEBSOCKET_TYPE_BINARY:
-                break;
-            case self::WEBSOCKET_TYPE_CLOSE:
-                //the connection is closed by the websocket client
-                if(is_callable($connection->server->onClose)) {
-                    call_user_func($connection->server->onClose, $connection);
-                }
-
-                $connection->close();
-
-                return 0;
-                break;
-            case self::WEBSOCKET_TYPE_PING:
-                break;
-            case self::WEBSOCKET_TYPE_PONG:
-                break;
-            default:
-                //the opcode is invalid
-                if(is_callable($connection->server->onError)) {
-                    call_user_func($connection->server->onError, $connection, 'error oppcode.');
-                }
-
-                $connection->close();
-
-                return 0;
-                break;
-        }
-
-        $all_frame_len = $connection->tmp_all_frame_len;
         $connection->tmp_all_frame_len = 0;
         return $all_frame_len;
     }
@@ -202,6 +168,40 @@ class WebSocketProtocol implements ProtocolInterface {
         $data_len = ord($buffer{1}) & 127;
         $is_mask = ord($buffer{1}) >> 7;
         $is_fin_frame = ord($buffer{0}) >> 7;
+        $opcode = ord($buffer{0}) & 0b00001111;
+
+        switch($opcode) {
+            case self::WEBSOCKET_TYPE_CONTINUE:
+                break;
+            case self::WEBSOCKET_TYPE_TEXT:
+                break;
+            case self::WEBSOCKET_TYPE_BINARY:
+                break;
+            case self::WEBSOCKET_TYPE_CLOSE:
+                //the connection is closed by the websocket client
+                if(is_callable($connection->server->onClose)) {
+                    call_user_func($connection->server->onClose, $connection);
+                }
+
+                $connection->close();
+
+                return 0;
+                break;
+            case self::WEBSOCKET_TYPE_PING:
+                break;
+            case self::WEBSOCKET_TYPE_PONG:
+                break;
+            default:
+                //the opcode is invalid
+                if(is_callable($connection->server->onError)) {
+                    call_user_func($connection->server->onError, $connection, 'error oppcode.');
+                }
+
+                $connection->close();
+
+                return 0;
+                break;
+        }
 
         if($data_len == 126) {
             $extra_payload_length = 2;
@@ -215,7 +215,7 @@ class WebSocketProtocol implements ProtocolInterface {
             $extra_payload_length = 0;
         }
 
-        $original = '';
+        $original = $connection->tmp_data;
         if($is_mask) {
             $mask_key = substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length, 4);
             $data = substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length + 4, $data_len);
@@ -223,9 +223,10 @@ class WebSocketProtocol implements ProtocolInterface {
                 $original .= $data{$i} ^ $mask_key[$i % 4];
             }
         } else {
-            $original = substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length, $data_len);
+            $original .= substr($buffer, self::MIN_HEAD_LEN + $extra_payload_length, $data_len);
         }
 
+        //if the websocket request is made of more than one frame, get the request data recursively
         if(!$is_fin_frame) {
             $connection->tmp_data .= $original;
             $connection->tmp_frame_len += $data_len;
@@ -254,66 +255,70 @@ class WebSocketProtocol implements ProtocolInterface {
     public static function handshake($buffer, ConnectionInterface $connection) {
         $connection->handshaked = false;
 
-        if(strpos($buffer, 'GET') === 0) {
-            $header_end_pos = strpos($buffer, "\r\n\r\n");
+        //if the handshake request is invalid, handshake fails and return a 400 response to the client
+        if(!self::validateHandshakeRequest($buffer)) {
+            $connection->send("HTTP/1.1 400 Bad Request\r\n\r\nInvalid handshake data for websocket.", true);
 
-            if($header_end_pos === false) {
+            if(is_callable($connection->server->onError)) {
+                call_user_func($connection->server->onError, $connection, 'Invalid handshake data for websocket.');
+            }
+
+            $connection->close();
+
+            return false;
+        }
+
+        $header_end_pos = strpos($buffer, "\r\n\r\n");
+
+        //if the handshake data is not done, wait for more data
+        if($header_end_pos === false) {
+            return false;
+        }
+
+        $header_length = $header_end_pos + 4;
+
+        //calculate the Sec-Websocket-Accept response header based on the Sec-Websocket-Key request header
+        preg_match("/Sec-Websocket-Key: *(.*?)\r\n/i", $buffer, $matches);
+        $sec_websocket_accept = base64_encode(sha1($matches[1] . "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", true));
+
+        //return 101 response and upgrade the client protocol to websocket
+        $handshake_response = "HTTP/1.1 101 Switching Protocol\r\n";
+        $handshake_response .= "Upgrade: websocket\r\n";
+        $handshake_response .= "Connection: Upgrade\r\n";
+        $handshake_response .= "Sec-Websocket-Accept: $sec_websocket_accept\r\n";
+        $handshake_response .= "\r\n";
+
+        if($connection->send($handshake_response, true)) {
+            $connection->handshaked = true;
+            $connection->tmp_all_frame_len = 0;
+            $connection->tmp_frame_len = 0;
+            $connection->tmp_data = '';
+
+            $header_string = substr($connection->recv_buffer, 0, $header_length);
+            $connection->recv_buffer = substr($connection->recv_buffer, $header_length);
+
+            self::parseHttpHeaders($header_string);
+
+            if(is_callable($connection->server->onConnection)) {
+                call_user_func($connection->server->onConnection, $connection);
+            }
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public static function validateHandshakeRequest($buffer) {
+        if(!preg_match("/^GET .* HTTP\/1.[01]\r\n(?:.+\: .*\r\n)*\r\n$/mi", $buffer)) {
+            return false;
+        } else {
+            if(!preg_match("/Sec-Websocket-Key: .*\r\n/i", $buffer)) {
                 return false;
+            } else {
+                return true;
             }
-
-            $header_length = $header_end_pos + 4;
-
-            if(!preg_match("/Sec-Websocket-Key: *(.*?)\r\n/i", $buffer, $matches)) {
-                $connection->send("HTTP/1.1 400 Bad Request\r\n\r\nThere is not Sec-Websocket-Key header in the request. Websocket handshake failed.", true);
-
-                if(is_callable($connection->server->onError)) {
-                    call_user_func($connection->server->onError, $connection, 'There is not Sec-Websocket-Key header in the request. Websocket handshake failed.');
-                }
-
-                $connection->close();
-
-                return $connection->handshaked;
-            }
-
-            $sec_websocket_accept = base64_encode(sha1($matches[1] . "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", true));
-
-            $handshake_response = "HTTP/1.1 101 Switching Protocol\r\n";
-            $handshake_response .= "Upgrade: websocket\r\n";
-            $handshake_response .= "Connection: Upgrade\r\n";
-            $handshake_response .= "Sec-Websocket-Accept: $sec_websocket_accept\r\n";
-            $handshake_response .= "\r\n";
-
-            if($connection->send($handshake_response, true)) {
-                $connection->handshaked = true;
-                $connection->tmp_all_frame_len = 0;
-                $connection->tmp_frame_len = 0;
-                $connection->tmp_data = '';
-
-                $header_string = substr($connection->recv_buffer, 0, $header_length);
-                $connection->recv_buffer = substr($connection->recv_buffer, $header_length);
-
-                self::parseHttpHeaders($header_string);
-
-                if(is_callable($connection->server->onConnection)) {
-                    call_user_func($connection->server->onConnection, $connection);
-                }
-
-                return $connection->handshaked;
-            }
-
-
-            return $connection->handshaked;
         }
-
-        $connection->send("HTTP/1.1 400 Bad Request\r\n\r\nInvalid handshake data for websocket.", true);
-
-        if(is_callable($connection->server->onError)) {
-            call_user_func($connection->server->onError, $connection, 'Invalid handshake data for websocket.');
-        }
-
-        $connection->close();
-
-        return $connection->handshaked;
     }
 
     /**
