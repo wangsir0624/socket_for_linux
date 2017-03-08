@@ -11,7 +11,7 @@ class SharedMemory {
     const MAX_READ_SEM = 10000;
 
     //初始化的实例数组
-    protected static $shms = array();
+    protected static $sms = array();
 
     //共享内存
     protected $shm;
@@ -34,12 +34,12 @@ class SharedMemory {
      */
     public static function getInstance($key, $memsize = null, $perm = 0666) {
         //如果已经有初始化好的实例，直接返回，如果没有，那就初始化一个实例并返回
-        if(!empty(self::$shms[$key])) {
-            return self::$shms[$key];
+        if(!empty(self::$sms[$key])) {
+            return self::$sms[$key];
         }
 
         $sm = new self($key, $memsize, $perm);
-        self::$shms[$key] = $sm;
+        self::$sms[$key] = $sm;
         return $sm;
     }
 
@@ -75,12 +75,14 @@ class SharedMemory {
             }
         }
 
-        return shm_get_var($this->shm, crc32($key));
+        $value = shm_get_var($this->shm, crc32($key));
 
         if(!$this->in_transaction) {
             sem_release($this->read_sem);
             sem_release($this->write_sem, true);
         }
+
+        return $value;
     }
 
     public function set($key, $value) {
@@ -103,11 +105,13 @@ class SharedMemory {
         shm_put_var($this->shm, crc32('writing'), true);
         $this->in_transaction = true;
 
-        return call_user_func($callback);
+        $result = call_user_func($callback);
 
         $this->in_transaction = false;
         shm_put_var($this->shm, crc32('writing'), false);
         sem_release($this->write_sem);
+
+        return $result;
     }
 
     /**
@@ -149,8 +153,8 @@ class SharedMemory {
     }
 
     public static function destroy($key) {
-        if(!empty(self::$shms[$key])) {
-            self::$shms[$key]->remove();
+        if(!empty(self::$sms[$key])) {
+            self::$sms[$key]->remove();
         }
     }
 
