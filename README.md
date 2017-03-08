@@ -1,14 +1,15 @@
-#socket_for_linux
-#一个用来快速搭建websocket和http服务器的框架，只需要几行代码就可以搭建一个服务器。使用多进程和IO复用来实现高并发；使用共享内存进行进程间的通信。支持守护进程，支持服务器的平滑重启。
+####socket_for_linux
+一个用来快速搭建websocket和http服务器的框架，只需要几行代码就可以搭建一个服务器。使用多进程和IO复用来实现高并发；使用共享内存进行进程间的通信。支持守护进程，支持服务器的平滑重启。<br>
 
-#Usage
-#Websocket服务器的使用
-#服务器的运行
-#进入到根目录中，运行php index.php start即可开启服务
+####Usage
+####Websocket服务器的使用
+#####服务器的运行
+进入到根目录中，运行php index.php start即可开启服务<br>
 
-#服务器参数配置
-#除了使用网站根目录的index.php外，你也可以编写自己的入口文件，下面是服务器配置介绍
+#####服务器参数配置
+除了使用网站根目录的index.php外，你也可以编写自己的入口文件，下面是服务器配置介绍<br>
 
+```php
 //初始化一个服务器
 $server = new \Server\WorkerServer('ws://127.0.0.1:8000');
 
@@ -38,13 +39,13 @@ $server->onClose = function() {}
 
 //运行
 $server->runAll();
+```
 
+#####服务器运行情况监视可以
+可以通过调用php index.php status来查看服务器的运行情况<br>
 
-#服务器运行情况监视可以
-#可以通过调用php index.php status来查看服务器的运行情况
+#####服务器关闭
+可以通过调用php index.php stop来停止服务器<br>
 
-#服务器关闭
-#可以通过调用php index.php stop来停止服务器
-
-#平滑重启
-#可以通过调用php index.php restart来平滑重启服务器
+#####平滑重启
+可以通过调用php index.php restart来平滑重启服务器<br>
