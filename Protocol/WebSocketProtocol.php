@@ -297,8 +297,6 @@ class WebSocketProtocol implements ProtocolInterface {
             $header_string = substr($connection->recv_buffer, 0, $header_length);
             $connection->recv_buffer = substr($connection->recv_buffer, $header_length);
 
-            self::parseHttpHeaders($header_string);
-
             if(is_callable($connection->server->onConnection)) {
                 call_user_func($connection->server->onConnection, $connection);
             }
@@ -310,7 +308,7 @@ class WebSocketProtocol implements ProtocolInterface {
     }
 
     public static function validateHandshakeRequest($buffer) {
-        if(!preg_match("/^GET .* HTTP\/1.[01]\r\n(?:.+\: .*\r\n)*\r\n$/mi", $buffer)) {
+        if(!preg_match("/^GET .* HTTP\/1.[01]\r\n(?:.+\: .*\r\n)*\r\n/mi", $buffer)) {
             return false;
         } else {
             if(!preg_match("/Sec-Websocket-Key: .*\r\n/i", $buffer)) {
@@ -319,13 +317,5 @@ class WebSocketProtocol implements ProtocolInterface {
                 return true;
             }
         }
-    }
-
-    /**
-     * parse the http headers
-     * @param $header_string
-     */
-    public static function parseHttpHeaders($header_string) {
-
     }
 }

@@ -62,7 +62,7 @@ class SharedMemory {
 
     /**
      * 获取存储的内存值
-     * @param $key  键名
+     * @param string $key  键名
      * @return mixed  返回存储值，如果值不存在，则返回false
      */
     public function get($key) {
@@ -92,8 +92,8 @@ class SharedMemory {
 
     /**
      * 修改存储的值
-     * @param $key  键名
-     * @param $value  新的存储值
+     * @param string $key  键名
+     * @param mixed $value  新的存储值
      * @return bool  成功返回true，失败返回false
      */
     public function set($key, $value) {
@@ -113,6 +113,32 @@ class SharedMemory {
         return $result;
     }
 
+    /**
+     * 删除键
+     * @param string $key  键名
+     * @return bool  成功返回true，失败返回false
+     */
+    public function delete($key) {
+        if(!$this->in_transaction) {
+            sem_acquire($this->write_sem);
+            shm_put_var($this->shm, crc32('writing'), true);
+        }
+
+        $result = shm_remove_var($this->shm, crc32($key));
+
+        if(!$this->in_transaction) {
+            shm_put_var($this->shm, crc32('writing'), false);
+            sem_release($this->write_sem);
+        }
+
+        return $result;
+    }
+
+    /**
+     * 开始一个事务，事务操作具有原子性，是并发安全的
+     * @param callable $callback
+     * @return mixed  返回callback的返回值
+     */
     public function transction($callback) {
         sem_acquire($this->write_sem);
         shm_put_var($this->shm, crc32('writing'), true);

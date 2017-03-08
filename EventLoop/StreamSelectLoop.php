@@ -226,7 +226,7 @@ class StreamSelectLoop implements EventLoopInterface {
             $write_fds = $this->write_fds;
             $exception_fds = $this->exception_fds;
 
-            stream_select($read_fds, $write_fds, $exception_fds, 0, $this->select_timeout);
+            @stream_select($read_fds, $write_fds, $exception_fds, 0, $this->select_timeout);
 
             if(!$this->schedule->isEmpty()) {
                 $this->tick();

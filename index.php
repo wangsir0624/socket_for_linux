@@ -4,29 +4,17 @@ use Server\Server;
 //引入自动加载文件
 require_once './autoload.php';
 
-$websocket_server = new Server('ws://127.0.0.1:8000');
+$server = new \Server\WorkerServer('ws://127.0.0.1:8000');
 
-$websocket_server->onClose = function($connection) {
-    $address = $connection->getRemoteAddress();
-
-    echo "connection from $address closed.\r\n";
+$server->wokers = 2;
+//$server->deamon = false;
+$server->onConnection = function($connection) {
+    $pid = posix_getpid();
+    echo "process $pid accept the connection from the client ".$connection->getRemoteAddress()."\r\n";
 };
 
-$websocket_server->onMessage = function($connection, $message) {
+$server->onMessage = function($connection, $message) {
     echo "message from client: $message\r\n";
-    $connection->send($message.'111');
+    $connection->send($message);
 };
-
-$websocket_server->onError = function($connection, $error) {
-    $address = $connection->getRemoteAddress();
-
-    echo "connection from $address failed: $error\r\n";
-};
-
-$websocket_server->onConnection = function($connection) {
-    $address = $connection->getRemoteAddress();
-
-    echo "connection from $address created\r\n";
-};
-
-$websocket_server->listen();
+$server->runAll();

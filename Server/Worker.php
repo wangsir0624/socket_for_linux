@@ -11,7 +11,7 @@ use EventLoop\EventLoopFactory;
 use Protocol\WebSocketProtocol;
 use Protocol\TextProtocol;
 
-class Server {
+class Worker {
     /**
      * 支持的服务器类型
      * 为一个数组映射，键为shema，值为对应的服务器类名
@@ -128,19 +128,27 @@ class Server {
         $this->connections = new SplObjectStorage();
     }
 
-    /**
-     * 服务器开始监听
-     */
-    public function listen() {
+    public function createSocket() {
         //创建服务器套接字
-        $stream = stream_socket_server("tcp://$this->ip:$this->port", $errno, $errstr);
+        $stream = @stream_socket_server("tcp://$this->ip:$this->port", $errno, $errstr);
         if(!$stream) {
             throw new RuntimeException('create socket server failed.');
         }
 
         $this->stream = $stream;
         stream_set_blocking($this->stream, 0);
+    }
 
+    public function closeSocket() {
+        if(is_resource($this>$this->stream)) {
+            fclose($this->stream);
+        }
+    }
+
+    /**
+     * 服务器开始监听
+     */
+    public function listen() {
         $this->loop->add($this->stream, EventLoopInterface::EV_READ, array($this, 'handleConnection'));
         $this->loop->run();
     }
@@ -149,7 +157,16 @@ class Server {
      * 处理来自客户端的连接请求
      */
     public function handleConnection() {
-        $connection = $this->createConnection();
+        try {
+            $connection = $this->createConnection();
+        } catch(\Exception $e) {
+            $this->sm->increment('failed_connections');
+            $this->sm->increment('total_connections');
+            return;
+        }
+        $this->sm->increment('current_connections');
+        $this->sm->increment('total_connections');
+
         $this->connections->attach($connection);
         stream_set_blocking($connection->stream, 0);
 

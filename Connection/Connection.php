@@ -3,6 +3,7 @@ namespace Connection;
 
 use EventLoop\EventLoopInterface;
 use Server\ServerInterface;
+use RuntimeException;
 
 class Connection implements ConnectionInterface {
     /**
@@ -29,13 +30,15 @@ class Connection implements ConnectionInterface {
      */
     public function __construct($server) {
         $this->server = $server;
-        $this->stream = stream_socket_accept($this->server->stream, $this->server->connectionTimeout, $peername);
+        $this->stream = @stream_socket_accept($this->server->stream, $this->server->connectionTimeout, $peername);
 
         //如果连接失败
         if(!$this->stream) {
             if(is_callable($this->server->onError)) {
                 call_user_func($this->server->onError, $this, "create connection to $peername failed.");
             }
+
+            throw new RuntimeException('stream_socket_accept() failed');
         }
 
         stream_set_read_buffer($this->stream, 0);
@@ -71,6 +74,8 @@ class Connection implements ConnectionInterface {
      * 关闭连接
      */
     public function close() {
+        $this->server->sm->decrement('current_connections');
+
         $this->server->connections->detach($this);
 
         $this->server->loop->delete($this->stream, EventLoopInterface::EV_READ);
