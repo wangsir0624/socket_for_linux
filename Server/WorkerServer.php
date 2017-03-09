@@ -25,6 +25,18 @@ class WorkerServer extends Worker {
     public $worker_reborn = true;
 
     /**
+     * when the server runs as a deamon, the standard output will redirect into this file
+     * @var string
+     */
+    public $std_output;
+
+    /**
+     * timezone
+     * @var string
+     */
+    public $timezone = 'Asia/Chongqing';
+
+    /**
      * the worker proccess ID array
      * @var array
      */
@@ -37,11 +49,23 @@ class WorkerServer extends Worker {
     public $sm;
 
     /**
+     * the server script path
+     * @var string
+     */
+    protected $server_script;
+
+    /**
      * run the server
      */
     public function runAll() {
         //check the environment
         self::checkEnvironment();
+
+        //set the timezone
+        $this->setTimezone();
+
+        //set the server script path
+        $this->setScriptPath();
 
         //create a shared memory segment
         $this->createSharedMemory();
@@ -115,12 +139,12 @@ class WorkerServer extends Worker {
         //create the server socket stream
         $this->createSocket();
 
-        //start all workers
         if($this->deamon) {
-            $this->deamon(array($this, 'startAllWorkers'));
-        } else {
-            $this->startAllWorkers();
+            $this->deamon();
         }
+
+        //start all workers
+        $this->startAllWorkers();
     }
 
     /**
@@ -187,15 +211,28 @@ class WorkerServer extends Worker {
     }
 
     /**
+     * set the script path
+     */
+    public function setScriptPath() {
+        //set the server script path
+        $this->server_script = $_SERVER[argv][0];
+        if(substr($this->server_script, 0, 1) != '/') {
+            $filename = realpath(posix_getcwd() . '/' . $this->server_script);
+        }
+    }
+
+    /**
+     * set the timezone
+     */
+    public function setTimezone() {
+        date_default_timezone_set($this->timezone);
+    }
+
+    /**
      * create a shared memory segment
      */
     public function createSharedMemory() {
-        $filename = $_SERVER[argv][0];
-        if(substr($filename, 0, 1) != '/') {
-            $filename = realpath(posix_getcwd() . '/' . $filename);
-        }
-
-        $key = ftok($filename, substr($filename, strlen($filename)-1));
+        $key = ftok($this->server_script, substr($this->server_script, strlen($this->server_script)-1));
 
         $this->sm = new SharedMemory($key);
     }
@@ -275,7 +312,7 @@ class WorkerServer extends Worker {
                 if($pid > 0) {
                     foreach($this->pids as $key => $value) {
                         if($value == $pid) {
-                            unset($this->pid[$key]);
+                            unset($this->pids[$key]);
                         }
                     }
                 }
@@ -302,10 +339,8 @@ class WorkerServer extends Worker {
 
     /**
      * turn the master process into a deamon
-     * @param $callback
-     * @param array $params
      */
-    public function deamon($callback, $params = array()) {
+    public function deamon() {
         $pid = pcntl_fork();
 
         if($pid < 0) {
@@ -321,7 +356,44 @@ class WorkerServer extends Worker {
 
             umask(0);
 
-            call_user_func_array($callback, $params);
+            $pid = pcntl_fork();
+
+            if($pid < 0) {
+                exit("pcntl_fork() failed\r\n");
+            } else if($pid > 0) {
+                exit(0);
+            }
+
+            //redirect the standard output to a file instead of the console
+            $this->resetStd();
+        }
+    }
+
+    /**
+     * Redirect standard input and output
+     * @throws Exception
+     */
+    protected function resetStd()
+    {
+        global $STDOUT, $STDERR;
+
+        if($this->std_output) {
+            echo $this->std_output;
+            $output = str_replace(array('{YY}', '{MM}', '{DD}'), array(date('Y'), date('m'), date('d')), $this->std_output);
+            echo $output;
+        } else {
+            $output = dirname($this->server_script).'/'.'output.txt';
+        }
+
+        $handle = fopen($output, "a");
+        if ($handle) {
+            unset($handle);
+            @fclose(STDOUT);
+            @fclose(STDERR);
+            $STDOUT = fopen($output, "a");
+            $STDERR = fopen($output, "a");
+        } else {
+            throw new Exception('can not open stdOutput file '.$output);
         }
     }
 
