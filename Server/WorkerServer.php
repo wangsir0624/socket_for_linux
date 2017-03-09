@@ -7,48 +7,54 @@ use Exception;
 
 class WorkerServer extends Worker {
     /**
-     * woker进程数
+     * the worker process count
      * @var int
      */
     public $wokers = 1;
 
     /**
-     * 是否以守护进程方式运行
+     * whether run as a deamon
      * @var bool
      */
     public $deamon = true;
 
     /**
-     * woker进程ID数组
+     * whether reborn the died worker process
+     * @var bool
+     */
+    public $worker_reborn = true;
+
+    /**
+     * the worker proccess ID array
      * @var array
      */
     protected $pids = array();
 
     /**
-     * 共享内存
+     * the shared memory segment
      * @var SharedMemory
      */
     public $sm;
 
     /**
-     * 运行服务器
+     * run the server
      */
     public function runAll() {
-        //检查环境
+        //check the environment
         self::checkEnvironment();
 
-        //创建一块共享内存区域
+        //create a shared memory segment
         $this->createSharedMemory();
 
-        //解析命令
+        //parse the command
         $this->parseCommand();
     }
 
     /**
-     * 解析命令
+     * parse the command
      */
     public function parseCommand() {
-        //命令参数过少，退出运行，并显示正确用法
+        //the arguments is too less, show the usage of the command
         if($_SERVER['argc'] < 2) {
             self::showHelp();
         }
@@ -100,46 +106,61 @@ class WorkerServer extends Worker {
     }
 
     /**
-     * 开启服务器
+     * start the server
      */
     public function startServer() {
-        //初始化运行参数
+        //initialize the server runtime variables
         $this->initRuntimeVars();
 
-        //创建服务器套接字
+        //create the server socket stream
         $this->createSocket();
 
-        //开启所有的woker进程
-        $this->startAllWorkers();
+        //start all workers
+        if($this->deamon) {
+            $this->deamon(array($this, 'startAllWorkers'));
+        } else {
+            $this->startAllWorkers();
+        }
     }
 
     /**
-     * 关闭服务器
+     * stop the server
      */
     public function stopServer() {
-        //关闭所有worker进程
+        //stop all workers
         $this->stopAllWorkers();
 
-        //关闭服务器套接字
+        //close the socket
         $this->closeSocket();
 
-        //清空服务器运行时参数
+        //empty the server runtime variables
         $this->emptyRuntimeVars();
     }
 
     /**
-     * 打印服务器运行状态
+     * print the server runtime status
      */
     public function showServerStatus() {
-        $tpl = "PID: %d\r\nWorkers: %d\r\nCurrent Connections: %d\r\nFailed Connections: %d\r\nTotal Connections %d\r\n";
+        $tpl = "PID: %d\r\nRuntime: %d\r\nWorkers: %d\r\nCurrent Connections: %d\r\nFailed Connections: %d\r\nTotal Connections %d\r\n";
 
-        printf($tpl, $this->sm->get('pid'), $this->sm->get('workers'), $this->sm->get('current_connections'), $this->sm->get('failed_connections'), $this->sm->get('total_connections'));
+        printf($tpl, $this->sm->get('pid'), time() - $this->sm->get('start_at'), $this->sm->get('workers'), $this->sm->get('current_connections'), $this->sm->get('failed_connections'), $this->sm->get('total_connections'));
     }
 
     /**
-     * 开启所有woker进程
+     * start all workers
      */
     public function startAllWorkers() {
+        //fork all the workers
+        $this->forkWorkers();
+
+        //the master process handles the incomming signals and monitor the worker processes
+        $this->handleSignals();
+    }
+
+    /**
+     * fork worker processes
+     */
+    public function forkWorkers() {
         while(count($this->pids) < $this->wokers) {
             $pid = pcntl_fork();
 
@@ -154,64 +175,67 @@ class WorkerServer extends Worker {
                 $this->sm->increment('workers');
             }
         }
-
-        //master进程用来处理信号，以及监视woker进程的运行情况
-        if($this->deamon) {
-            $this->deamon(array($this, "handleSignals"));
-        } else {
-            $this->handleSignals();
-        }
     }
 
     /**
-     * 安装信号处理器
+     * set the signal handler
      */
     public function initSignals() {
         pcntl_signal(SIGINT, array($this, 'signalHandler'));
+        pcntl_signal(SIGHUP, array($this, 'signalHandler'));
         pcntl_signal(SIGCHLD, array($this, 'signalHandler'));
     }
 
     /**
-     * 创建一块共享内存区域，用来存储服务器运行参数
+     * create a shared memory segment
      */
     public function createSharedMemory() {
-        $key = ftok(__FILE__, substr(__FILE__, 0, 1));
+        $filename = $_SERVER[argv][0];
+        if(substr($filename, 0, 1) != '/') {
+            $filename = realpath(posix_getcwd() . '/' . $filename);
+        }
 
-        $this->sm = SharedMemory::getInstance($key);
+        $key = ftok($filename, substr($filename, strlen($filename)-1));
+
+        $this->sm = new SharedMemory($key);
     }
 
     /**
-     * 释放共享内存
+     * release the shared memory
      */
     public function destroySharedMemory() {
         $this->sm->remove();
     }
 
     /**
-     * 初始化服务器运行参数
+     * initialize the server runtime variables
      */
     public function initRuntimeVars() {
-        //服务器master进程ID
+        //the server master process ID
         $this->sm->set('pid', 0);
 
-        //服务器worker进程数
+        //the server starting time
+        $this->sm->set('start_at', time());
+
+        //the worker process count
         $this->sm->set('workers', 0);
 
-        //服务器目前连接数
+        //alive connection count
         $this->sm->set('current_connections', 0);
 
-        //服务器连接失败次数
+        //failed connection count
         $this->sm->set('failed_connections', 0);
 
-        //服务器处理的所有连接数，包括正在进行的，已关闭的，错误的
+        //the totol connection count, including the alive, the failed and the closed
         $this->sm->set('total_connections', 0);
     }
 
     /**
-     * 清空服务器运行参数
+     * empty the server runtime variables
      */
     public function emptyRuntimeVars() {
         $this->sm->delete('pid');
+        $this->sm->delete('start_at');
         $this->sm->delete('workers');
         $this->sm->delete('current_connections');
         $this->sm->delete('failed_connections');
@@ -222,25 +246,25 @@ class WorkerServer extends Worker {
      * wait for the signals
      */
     public function handleSignals() {
-        //安装信号处理器
         $this->initSignals();
 
-        //将服务器master进程ID存入到共享内存中
+        //store the master process ID in the shared memory
         $this->sm->set('pid', posix_getpid());
 
-        //信号监听
+        //dispatch the signals
         while(1) {
             pcntl_signal_dispatch();
         }
     }
 
     /**
-     * 信号处理器
-     * @param int $signal  接收到的信号
+     * signal handler
+     * @param int $signal  the received signal
      */
     public function signalHandler($signal) {
         switch($signal) {
             case SIGINT:
+            case SIGHUP:
                 $this->stopServer();
                 $this->destroySharedMemory();
                 exit;
@@ -258,12 +282,17 @@ class WorkerServer extends Worker {
 
                 $this->sm->decrement('workers');
 
+                //reborn the died workers
+                if($this->worker_reborn) {
+                    $this->forkWorkers();
+                }
+
                 break;
         }
     }
 
     /**
-     * 停止所有woker进程
+     * stop all workers
      */
     public function stopAllWorkers() {
         foreach($this->pids as $pid) {
@@ -272,9 +301,9 @@ class WorkerServer extends Worker {
     }
 
     /**
-     * 将master进程变成守护进程
-     * @param $callback  守护进程下执行的任务
-     * @param array $params  callback的参数
+     * turn the master process into a deamon
+     * @param $callback
+     * @param array $params
      */
     public function deamon($callback, $params = array()) {
         $pid = pcntl_fork();
@@ -297,7 +326,7 @@ class WorkerServer extends Worker {
     }
 
     /**
-     * 检查环境是否符合运行要求
+     * check the environment
      */
     protected static function checkEnvironment() {
         if(strtolower(substr(php_sapi_name(), 0, 3)) != 'cli') {
@@ -310,7 +339,7 @@ class WorkerServer extends Worker {
     }
 
     /**
-     * 显示命令使用帮助
+     * show the usage of the server
      */
     protected static function showHelp() {
         $help = "Usage: php scriptname start|stop|restart|status\r\n";
@@ -318,7 +347,7 @@ class WorkerServer extends Worker {
     }
 
     /**
-     * 检查服务是否在运行
+     * check whether the server is running
      * @return bool
      */
     protected function isRunning() {

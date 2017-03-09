@@ -13,80 +13,75 @@ use Protocol\TextProtocol;
 
 class Worker {
     /**
-     * 支持的服务器类型
-     * 为一个数组映射，键为shema，值为对应的服务器类名
+     * the supported protocols
      * @const array
      */
     protected static $protocols = array(
-        'tcp' => TextProtocol::class,
-        'ws' => WebSocketProtocol::class
+        'ws' => WebSocketProtocol::class,
+        'http' => HttpProtocol::class
     );
 
     /**
-     * @var stream
-     * 服务器套接字
+     * the server socket stream
+     * @var resource
      */
     public $stream;
 
     /**
+     * the server IP
      * @var string
-     * 服务器IP地址
      */
     private $ip;
 
     /**
+     * the server port
      * @var int
-     * 服务器监听的端口值
      */
     private $port;
 
     /**
-     * 服务器回调函数
-     * onConnection onMessage onError onClose这四个回调函数的第一个参数均为当前的connection实例
-     */
-
-    /**
+     * the callback when the server accept the client connections
+     * function($connection) {}
      * @var callable
-     * 服务器与客户端建立连接时触发的回调函数
      */
     public $onConnection;
 
     /**
+     * the callback when the server receives client message
+     * function($connection, $message) {}
      * @var callable
-     * 服务器连接接受客户端消息时的回调函数
-     * 接受两个参数，第一个为connection，第二个为接收到的服务器消息message
      */
     public $onMessage;
 
     /**
+     * the callback when the connection is closed
+     * function($connection) {}
      * @var callable
-     * 服务器连接关闭时的回调函数
      */
     public $onClose;
 
     /**
+     * the callback when an error occurs
+     * function($connection, $error) {}
      * @var callable
-     * 服务器连接出现错误时触发的回调函数
-     * 接受两个参数，第一个为connection，第二个为错误信息error
      */
     public $onError;
 
     /**
+     * the connection collections
      * @var SplObjectStorage
-     * 管理server下的所有连接
      */
     public $connections;
 
     /**
+     * the event loop
      * @var EventLoopInterface
-     * 用来监视套接字IO事件
      */
     public $loop;
 
     /**
+     * the accept timeout
      * @var int
-     * 客户端连接服务器的超时时间
-     * 如果超过这个时间，那么stream_socket_accept就会连接失败
      */
     public $connectionTimeout = 5;
 
@@ -97,25 +92,22 @@ class Worker {
     public $protocol;
 
     /**
-     * 创建服务器实例
-     * @param string uri 此参数形式为scheme//ip:port 例如tcp://127.0.0.1:8000
+     * constructor
+     * @param string uri the uri is like this: scheme//ip:port. for example, tcp://127.0.0.1:8000
      * @return ServerInterface
      */
     public function __construct($uri) {
-        /**
-         * uri由schema，IP和port组成
-         *解析uri
-         */
+        //parse the uri
         $schema = substr($uri, 0, strpos($uri, "://"));
         $address = substr($uri, strpos($uri, "://")+3);
         list($ip, $port) = explode(':', $address);
 
-        //如果uri不符合规则，则跑出InvalidAugumentException
+        //if the uri is incorrect, throw an InvalidArgumentException
         if(empty($schema) || empty($ip) || empty($port)) {
             throw new InvalidArgumentException('the argument is not correct.');
         }
 
-        //根据shema，实例化对应的服务器类
+        //choose the protocol according to the sheme
         $protocolName = @self::$protocols[$schema];
         if(empty($protocolName)) {
             throw new RuntimeException('unsupported application protocol.');
@@ -128,8 +120,10 @@ class Worker {
         $this->connections = new SplObjectStorage();
     }
 
+    /**
+     * create the server socket stream
+     */
     public function createSocket() {
-        //创建服务器套接字
         $stream = @stream_socket_server("tcp://$this->ip:$this->port", $errno, $errstr);
         if(!$stream) {
             throw new RuntimeException('create socket server failed.');
@@ -139,6 +133,9 @@ class Worker {
         stream_set_blocking($this->stream, 0);
     }
 
+    /**
+     * close the server socket stream
+     */
     public function closeSocket() {
         if(is_resource($this>$this->stream)) {
             fclose($this->stream);
@@ -146,7 +143,7 @@ class Worker {
     }
 
     /**
-     * 服务器开始监听
+     * listening
      */
     public function listen() {
         $this->loop->add($this->stream, EventLoopInterface::EV_READ, array($this, 'handleConnection'));
@@ -154,14 +151,12 @@ class Worker {
     }
 
     /**
-     * 处理来自客户端的连接请求
+     * handle the connection request from client
      */
     public function handleConnection() {
         try {
             $connection = $this->createConnection();
         } catch(\Exception $e) {
-            $this->sm->increment('failed_connections');
-            $this->sm->increment('total_connections');
             return;
         }
         $this->sm->increment('current_connections');
@@ -174,7 +169,7 @@ class Worker {
     }
 
     /**
-     * 创建连接
+     * create a connection instance
      * @return ConnectionInterface
      */
     private function createConnection() {
@@ -182,8 +177,8 @@ class Worker {
     }
 
     /**
-     * 设置客户端连接超时时间
-     * @param $timeout  超时事件，单位为秒
+     * set the accept timeout
+     * @param $timeout  timeout in seconds
      */
     public function setConnectionTimeout($timeout) {
         $this->connectionTimeout = $timeout;

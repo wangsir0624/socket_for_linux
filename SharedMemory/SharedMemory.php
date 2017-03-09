@@ -1,78 +1,52 @@
 <?php
 /**
- * 并发安全的共享内存
+ * concurrency-safe shared memory
  * @Author WangJian
  * @Email 1636801376@qq.com
  */
 namespace SharedMemory;
 
 class SharedMemory {
-    //可以同时读取的最大进程数量
-    const MAX_READ_SEM = 10000;
-
-    //初始化的实例数组
-    protected static $sms = array();
-
-    //共享内存
+    /**
+     * the shared memory segment identifier
+     * @var resource
+     */
     protected $shm;
 
-    //读信号量
-    protected $read_sem;
+    //the semaphore identifier
+    protected $sem;
 
-    //写信号量
-    protected $write_sem;
-
-    //是否有事务在进行
+    //whether runs in transaction
     protected $in_transaction;
 
     /**
-     * 单例模式的变形
-     * @param int $key
-     * @param int $memsize
-     * @param int $perm
-     * @return SharedMemory
-     */
-    public static function getInstance($key, $memsize = 0, $perm = 0666) {
-        //如果已经有初始化好的实例，直接返回，如果没有，那就初始化一个实例并返回
-        if(!empty(self::$sms[$key])) {
-            return self::$sms[$key];
-        }
-
-        $sm = new self($key, $memsize, $perm);
-        self::$sms[$key] = $sm;
-        return $sm;
-    }
-
-    /**
-     * 构造函数
+     * constructor
      * @param int $key
      * @param int $memsize
      * @param int $perm
      */
-    protected function __construct($key, $memsize = 0, $perm = 0666) {
+    public function __construct($key, $memsize = 0, $perm = 0666) {
         if(empty($memsize)) {
             $this->shm = shm_attach($key);
         } else {
             $this->shm = shm_attach($key, $memsize, $perm);
         }
-        $this->read_sem = sem_get(crc32($key.'read'), self::MAX_READ_SEM);
-        $this->write_sem = sem_get(crc32($key.'write'));
+        $this->sem = sem_get($key);
         $this->in_transaction = false;
     }
 
     /**
-     * 获取存储的内存值
-     * @param string $key  键名
-     * @return mixed  返回存储值，如果值不存在，则返回false
+     * get the stored vlaue
+     * @param string $key
+     * @return mixed  return the value with the given key or false on failure
      */
     public function get($key) {
         //如果在事务中调用此函数，则锁机制交由事务来处理
         if(!$this->in_transaction) {
-            while(sem_acquire($this->read_sem)) {
-                sem_acquire($this->write_sem, true);
+            while(1) {
+                sem_acquire($this->sem, true);
                 if(@shm_get_var($this->shm, crc32('writing'))) {
-                    sem_release($this->read_sem);
-                    sem_release($this->write_sem);
+                    @sem_release($this->sem);
                     continue;
                 }
 
@@ -83,23 +57,22 @@ class SharedMemory {
         $value = @shm_get_var($this->shm, crc32($key));
 
         if(!$this->in_transaction) {
-            sem_release($this->read_sem);
-            sem_release($this->write_sem);
+            @sem_release($this->sem);
         }
 
         return $value;
     }
 
     /**
-     * 修改存储的值
-     * @param string $key  键名
-     * @param mixed $value  新的存储值
-     * @return bool  成功返回true，失败返回false
+     * set the value
+     * @param string $key
+     * @param mixed $value  new value
+     * @return bool  return true on success, and false on failure
      */
     public function set($key, $value) {
-        //如果在事务中调用此函数，则锁机制交由事务来处理
+        //the transaction will acquire a mutex, so needn't acquired the mutex when called in a transaction
         if(!$this->in_transaction) {
-            sem_acquire($this->write_sem);
+            sem_acquire($this->sem);
             shm_put_var($this->shm, crc32('writing'), true);
         }
 
@@ -107,57 +80,58 @@ class SharedMemory {
 
         if(!$this->in_transaction) {
             shm_put_var($this->shm, crc32('writing'), false);
-            sem_release($this->write_sem);
+            sem_release($this->sem);
         }
 
         return $result;
     }
 
     /**
-     * 删除键
-     * @param string $key  键名
-     * @return bool  成功返回true，失败返回false
+     * delete the key
+     * @param string $key
+     * @return bool  return true on success and false on failure
      */
     public function delete($key) {
+        //the transaction will acquire a mutex, so needn't acquired the mutex when called in a transaction
         if(!$this->in_transaction) {
-            sem_acquire($this->write_sem);
+            sem_acquire($this->sem);
             shm_put_var($this->shm, crc32('writing'), true);
         }
 
-        $result = shm_remove_var($this->shm, crc32($key));
+        $result = @shm_remove_var($this->shm, crc32($key));
 
         if(!$this->in_transaction) {
             shm_put_var($this->shm, crc32('writing'), false);
-            sem_release($this->write_sem);
+            sem_release($this->sem);
         }
 
         return $result;
     }
 
     /**
-     * 开始一个事务，事务操作具有原子性，是并发安全的
+     * begin a transaction. A transaction is atomic and concurrency-safe
      * @param callable $callback
-     * @return mixed  返回callback的返回值
+     * @return mixed  return the result of the callback parameter
      */
     public function transction($callback) {
-        sem_acquire($this->write_sem);
+        sem_acquire($this->sem);
         shm_put_var($this->shm, crc32('writing'), true);
         $this->in_transaction = true;
 
-        $result = call_user_func($callback);
+        $result = call_user_func($callback, $this);
 
         $this->in_transaction = false;
         shm_put_var($this->shm, crc32('writing'), false);
-        sem_release($this->write_sem);
+        sem_release($this->sem);
 
         return $result;
     }
 
     /**
-     * 增加存储的整数值
-     * @param $key  键名
-     * @param $by  增量，可以为负值，负值表示减少
-     * @return bool  成功，返回true；如果存储的不是整数值，则返回false
+     * increase the value
+     * @param string $key
+     * @param int $by  increment, decrease the value when this parameter is negative
+     * @return bool  return true on success. when the original value is not a integer, return false
      */
     public function increment($key, $by = 1) {
         return $this->transction(function() use($key, $by) {
@@ -167,16 +141,15 @@ class SharedMemory {
                 return false;
             }
 
-            $this->set($key, $value+(int)$by);
-            return true;
+            return $this->set($key, $value+(int)$by);
         });
     }
 
     /**
-     * 减少存储的整数值
-     * @param $key  键名
-     * @param $by  增量，可以为负值，负值表示增加
-     * @return bool  成功，返回true；如果存储的不是整数值，则返回false
+     * decrease the value
+     * @param string $key
+     * @param int $by  decrement, increase the value when this parameter is negative
+     * @return bool  return true on success. when the original value is not a integer, return false
      */
     public function decrement($key, $by = 1) {
         return $this->transction(function() use($key, $by) {
@@ -186,27 +159,15 @@ class SharedMemory {
                 return false;
             }
 
-            $this->set($key, $value-(int)$by);
-            return true;
+            return $this->set($key, $value-(int)$by);
         });
     }
 
     /**
-     * 释放指定的共享内存
-     * @param $key
-     */
-    public static function destroy($key) {
-        if(!empty(self::$sms[$key])) {
-            self::$sms[$key]->remove();
-        }
-    }
-
-    /**
-     * 删除一个共享内存区域
+     * release the shared memory
      */
     public function remove() {
         shm_remove($this->shm);
-        sem_remove($this->read_sem);
-        sem_remove($this->write_sem);
+        sem_remove($this->sem);
     }
 }

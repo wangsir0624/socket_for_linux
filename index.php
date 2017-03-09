@@ -2,7 +2,7 @@
 use Server\Server;
 
 //引入自动加载文件
-require_once './autoload.php';
+require_once __DIR__.'/autoload.php';
 
 $server = new \Server\WorkerServer('ws://127.0.0.1:8000');
 

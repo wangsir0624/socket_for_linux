@@ -263,6 +263,8 @@ class WebSocketProtocol implements ProtocolInterface {
                 call_user_func($connection->server->onError, $connection, 'Invalid handshake data for websocket.');
             }
 
+            $connection->server->sm->increment('failed_connections');
+
             $connection->close();
 
             return false;
