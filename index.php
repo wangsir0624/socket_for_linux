@@ -6,7 +6,7 @@ require_once __DIR__.'/autoload.php';
 
 $server = new \Server\WorkerServer('ws://127.0.0.1:8000');
 
-$server->wokers = 2;
+$server->wokers = 4;
 //$server->deamon = false;
 
 //worker退出时，是否fork新worker代替

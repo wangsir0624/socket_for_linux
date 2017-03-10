@@ -7,32 +7,43 @@ use RuntimeException;
 
 class Connection implements ConnectionInterface {
     /**
+     * the connection socket stream
      * @var resource
-     * 连接套接字
      */
     public $stream;
 
     /**
+     * the server which this connection belongs to
      * @var ServerInterface
-     * 连接所属的服务器
      */
     public $server;
 
+    /**
+     * receive buffer
+     * @var string
+     */
     public $recv_buffer = '';
 
+    /**
+     * receive buffer size
+     * @var int
+     */
     public $recv_buffer_size = 1048576;
 
+    /**
+     * the size of the current package
+     * @var int
+     */
     private $current_package_size;
 
     /**
-     * 构造函数
+     * constructor
      * @param ServerInterface $server
      */
     public function __construct($server) {
         $this->server = $server;
         $this->stream = @stream_socket_accept($this->server->stream, $this->server->connectionTimeout, $peername);
 
-        //如果连接失败
         if(!$this->stream) {
             if(is_callable($this->server->onError)) {
                 call_user_func($this->server->onError, $this, "create connection to $peername failed.");
@@ -45,8 +56,10 @@ class Connection implements ConnectionInterface {
     }
 
     /**
-     * 发送数据
-     * @buffer
+     * send message to the client
+     * @param sting buffer
+     * @param string $raw  whether encode the buffer with the protocol
+     * @return int the length of send data
      */
     public function send($buffer, $raw = false) {
         if($buffer) {
@@ -71,7 +84,7 @@ class Connection implements ConnectionInterface {
     }
 
     /**
-     * 关闭连接
+     * close the connection
      */
     public function close() {
         $this->server->sm->decrement('current_connections');
@@ -84,7 +97,7 @@ class Connection implements ConnectionInterface {
     }
 
     /**
-     * 连接接收到数据时调用的回调函数
+     * called when the connection receive the client data
      */
     public function handleMessage() {
         $buffer = fread($this->stream, $this->recv_buffer_size);
@@ -109,7 +122,7 @@ class Connection implements ConnectionInterface {
     }
 
     /**
-     * 获取客户端的地址，包括IP和端口
+     * get the client address, including IP and port
      * @return string
      */
     public function getRemoteAddress() {
@@ -117,7 +130,7 @@ class Connection implements ConnectionInterface {
     }
 
     /**
-     * 获取客户端的IP
+     * get the client IP
      * @return string
      */
     public function getRemoteIp() {
@@ -125,7 +138,7 @@ class Connection implements ConnectionInterface {
     }
 
     /**
-     * 获取客户端的端口
+     * get the client port
      * @return string
      */
     public function getRemotePort() {

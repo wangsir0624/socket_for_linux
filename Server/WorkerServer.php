@@ -99,9 +99,8 @@ class WorkerServer extends Worker {
                 break;
             case 'restart':
                 if($this->isRunning()) {
-                    posix_kill($this->sm->get('pid'), SIGINT);
+                    posix_kill($this->sm->get('pid'), SIGUSR1);
 
-                    $this->createSharedMemory();
                     while(1) {
                         try {
                             $this->startServer();
@@ -133,14 +132,14 @@ class WorkerServer extends Worker {
      * start the server
      */
     public function startServer() {
-        //initialize the server runtime variables
-        $this->initRuntimeVars();
-
         //create the server socket stream
         $this->createSocket();
 
+        //initialize the server runtime variables
+        $this->initRuntimeVars();
+
         if($this->deamon) {
-            $this->deamon();
+            $this->deamonize();
         }
 
         //start all workers
@@ -154,11 +153,11 @@ class WorkerServer extends Worker {
         //stop all workers
         $this->stopAllWorkers();
 
-        //close the socket
-        $this->closeSocket();
-
         //empty the server runtime variables
         $this->emptyRuntimeVars();
+
+        //close the socket
+        $this->closeSocket();
     }
 
     /**
@@ -207,6 +206,7 @@ class WorkerServer extends Worker {
     public function initSignals() {
         pcntl_signal(SIGINT, array($this, 'signalHandler'));
         pcntl_signal(SIGHUP, array($this, 'signalHandler'));
+        pcntl_signal(SIGUSR1, array($this, 'signalHandler'));
         pcntl_signal(SIGCHLD, array($this, 'signalHandler'));
     }
 
@@ -306,6 +306,10 @@ class WorkerServer extends Worker {
                 $this->destroySharedMemory();
                 exit;
                 break;
+            case SIGUSR1:
+                $this->stopServer();
+                exit;
+                break;
             case SIGCHLD:
                 $pid = pcntl_wait($status, WNOHANG);
 
@@ -333,6 +337,7 @@ class WorkerServer extends Worker {
      */
     public function stopAllWorkers() {
         foreach($this->pids as $pid) {
+            echo $pid;
             exec("kill -9 $pid");
         }
     }
@@ -340,7 +345,7 @@ class WorkerServer extends Worker {
     /**
      * turn the master process into a deamon
      */
-    public function deamon() {
+    public function deamonize() {
         $pid = pcntl_fork();
 
         if($pid < 0) {
@@ -378,11 +383,9 @@ class WorkerServer extends Worker {
         global $STDOUT, $STDERR;
 
         if($this->std_output) {
-            echo $this->std_output;
             $output = str_replace(array('{YY}', '{MM}', '{DD}'), array(date('Y'), date('m'), date('d')), $this->std_output);
-            echo $output;
         } else {
-            $output = dirname($this->server_script).'/'.'output.txt';
+            $output = dirname($this->server_script).'/'.'output_'.date('Ymd').'.txt';
         }
 
         $handle = fopen($output, "a");
