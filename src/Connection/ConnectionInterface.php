@@ -1,5 +1,5 @@
 <?php
-namespace Connection;
+namespace Wangjian\Socket\Connection;
 
 interface ConnectionInterface {
 

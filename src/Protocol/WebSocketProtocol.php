@@ -1,7 +1,7 @@
 <?php
-namespace Protocol;
+namespace Wangjian\Socket\Protocol;
 
-use Connection\ConnectionInterface;
+use Wangjian\Socket\Connection\ConnectionInterface;
 
 class WebSocketProtocol implements ProtocolInterface {
     /**

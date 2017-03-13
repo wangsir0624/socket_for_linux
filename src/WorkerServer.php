@@ -1,8 +1,8 @@
 <?php
-namespace Server;
+namespace Wangjian\Socket;
 
 use RuntimeException;
-use SharedMemory\SharedMemory;
+use Wangjian\Socket\SharedMemory\SharedMemory;
 use Exception;
 
 class WorkerServer extends Worker {

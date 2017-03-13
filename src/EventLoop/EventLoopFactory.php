@@ -1,5 +1,5 @@
 <?php
-namespace EventLoop;
+namespace Wangjian\Socket\EventLoop;
 
 class EventLoopFactory {
     public static function createLoop() {

@@ -1,8 +1,7 @@
 <?php
-namespace Connection;
+namespace Wangjian\Socket\Connection;
 
-use EventLoop\EventLoopInterface;
-use Server\ServerInterface;
+use Wangjian\Socket\EventLoop\EventLoopInterface;
 use RuntimeException;
 
 class Connection implements ConnectionInterface {

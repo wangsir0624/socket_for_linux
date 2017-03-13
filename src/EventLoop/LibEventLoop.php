@@ -1,5 +1,5 @@
 <?php
-namespace EventLoop;
+namespace Wangjian\Socket\EventLoop;
 
 class LibEventLoop implements EventLoopInterface {
     /**

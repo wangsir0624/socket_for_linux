@@ -1,15 +1,15 @@
 <?php
-namespace Server;
+namespace Wangjian\Socket;
 
-use Connection\ConnectionInterface;
-use EventLoop\EventLoopInterface;
-use EventLoop\StreamSelectLoop;
+use Wangjian\Socket\Connection\ConnectionInterface;
+use Wangjian\Socket\EventLoop\EventLoopInterface;
+use Wangjian\Socket\EventLoop\StreamSelectLoop;
 use RuntimeException;
-use Connection\Connection;
+use Wangjian\Socket\Connection\Connection;
 use SplObjectStorage;
-use EventLoop\EventLoopFactory;
-use Protocol\WebSocketProtocol;
-use Protocol\TextProtocol;
+use Wangjian\Socket\EventLoop\EventLoopFactory;
+use Wangjian\Socket\Protocol\WebSocketProtocol;
+use Wangjian\Socket\Protocol\HttpProtocol;
 
 class Worker {
     /**

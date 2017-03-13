@@ -1,5 +1,5 @@
 <?php
-namespace Protocol;
+namespace Wangjian\Socket\Protocol;
 
 interface ProtocolInterface {
 }
