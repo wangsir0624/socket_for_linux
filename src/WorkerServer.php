@@ -58,6 +58,8 @@ class WorkerServer extends Worker {
      * run the server
      */
     public function runAll() {
+        global $argc, $argv;
+
         //check the environment
         self::checkEnvironment();
 
@@ -215,7 +217,7 @@ class WorkerServer extends Worker {
      */
     public function setScriptPath() {
         //set the server script path
-        $this->server_script = $_SERVER[argv][0];
+        $this->server_script = $_SERVER['argv'][0];
         if(substr($this->server_script, 0, 1) != '/') {
             $filename = realpath(posix_getcwd() . '/' . $this->server_script);
         }

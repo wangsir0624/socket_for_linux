@@ -4,7 +4,7 @@
  * @Author WangJian
  * @Email 1636801376@qq.com
  */
-namespace SharedMemory;
+namespace Wangjian\Socket\SharedMemory;
 
 class SharedMemory {
     /**
@@ -44,7 +44,7 @@ class SharedMemory {
         //如果在事务中调用此函数，则锁机制交由事务来处理
         if(!$this->in_transaction) {
             while(1) {
-                sem_acquire($this->sem, true);
+                @sem_acquire($this->sem, true);
                 if(@shm_get_var($this->shm, crc32('writing'))) {
                     @sem_release($this->sem);
                     continue;
