@@ -53,7 +53,7 @@ class WebSocketProtocol implements ProtocolInterface {
 
     /**
      * get the websocket frame length.
-     * @param $buffer
+     * @param string $buffer
      * @param ConnectionInterface $connection
      * @return int return the frame length when the buffer is ready. Notice: when the buffer is not ready and should wait for more data, returns 0
      */
@@ -136,21 +136,21 @@ class WebSocketProtocol implements ProtocolInterface {
 
     /**
      * websocket encode
-     * @param $buffer
+     * @param mixed $original
      * @param ConnectionInterface $connection
      * @return string  returns the encoded buffer
      */
-    public static function encode($buffer, ConnectionInterface $connection) {
-        $len = strlen($buffer);
+    public static function encode($original, ConnectionInterface $connection) {
+        $len = strlen($original);
 
         $first_byte = chr(self::WEBSOCKET_TYPE_TEXT | 0b10000000);
 
         if($len <= 125) {
-            $data = $first_byte.chr($len).$buffer;
+            $data = $first_byte.chr($len).$original;
         } else if($len <= 65535) {
-            $data = $first_byte.chr(126).pack('n', $len).$buffer;
+            $data = $first_byte.chr(126).pack('n', $len).$original;
         } else {
-            $data = $first_byte.char(127).pack('xxxxN', $len).$buffer;
+            $data = $first_byte.char(127).pack('xxxxN', $len).$original;
         }
 
         return $data;

@@ -18,6 +18,12 @@ class Connection implements ConnectionInterface {
     public $server;
 
     /**
+     * the message handler
+     * @var MessageHandler
+     */
+    public $handler;
+
+    /**
      * receive buffer
      * @var string
      */
@@ -33,7 +39,7 @@ class Connection implements ConnectionInterface {
      * the size of the current package
      * @var int
      */
-    private $current_package_size;
+    public $current_package_size;
 
     /**
      * constructor
@@ -69,11 +75,13 @@ class Connection implements ConnectionInterface {
 
             $len = strlen($buffer);
             $writeLen = 0;
-            while (($data = fwrite($this->stream, substr($buffer, $writeLen), $len - $writeLen))) {
-                $writeLen += $data;
-                if ($writeLen >= $len) {
-                    break;
+            while($writeLen < $len) {
+                $data = @fwrite($this->stream, substr($buffer, $writeLen, 8192), 8192);
+                if(!$data) {
+                    continue;
                 }
+
+                $writeLen += $data;
             }
 
             return $writeLen;
@@ -99,25 +107,7 @@ class Connection implements ConnectionInterface {
      * called when the connection receive the client data
      */
     public function handleMessage() {
-        $buffer = fread($this->stream, $this->recv_buffer_size);
-
-        $this->recv_buffer .= $buffer;
-
-        $protocol = $this->server->protocol;
-
-        $this->current_package_size = $protocol::input($this->recv_buffer, $this);
-
-        if($this->current_package_size != 0) {
-            $buffer = substr($this->recv_buffer, 0, $this->current_package_size);
-            $this->recv_buffer = substr($this->recv_buffer, $this->current_package_size);
-            $this->current_package_size = 0;
-
-            $protocol::decode($buffer, $this);
-
-            if(!empty($this->recv_buffer)) {
-                call_user_func(array($this, 'handleMessage'));
-            }
-        }
+        $this->handler->handleMessage($this);
     }
 
     /**
