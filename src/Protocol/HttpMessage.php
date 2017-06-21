@@ -13,6 +13,7 @@ class HttpMessage implements ArrayAccess {
     /**
      * the http message body
      * @var string
+     */
     protected $body;
 
     /**
