@@ -23,6 +23,28 @@ class HttpHandler extends MessageHandler {
 
                 $http_message = $protocol::decode($buffer, $connection);
 
+                //check whether the method is allowed
+                if(!in_array($http_message['Method'], $connection->server->allowedMethods())) {
+                    $body = <<<EOF
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>405 Method Not Allowed</title>
+</head><body>
+<h1>Method Not Allowed</h1>
+</body></html>
+EOF;
+                    $methodNotAllowedResponse = new HttpMessage([
+                        'Code' => '405',
+                        'Status' => HttpProtocol::$status['405'],
+                        'Version' => $http_message['Version'],
+                        'Content-Type' => 'text/html',
+                        'Content-Length' => strlen($body),
+                        'Date' => date('D, d m Y H:i:s e')
+                    ], $body);
+                    $connection->sendString($methodNotAllowedResponse);
+                    return;
+                }
+
                 //handle the request
                 switch($http_message['Method']) {
                     case 'GET':
@@ -35,7 +57,7 @@ class HttpHandler extends MessageHandler {
 
                         //get the request file path
                         $uri = $http_message['Uri'];
-                        list($request_file, $query_string) = explode('?', $uri);
+                        @list($request_file, $query_string) = explode('?', $uri);
                         $request_file = rtrim($host_config['root'], '/').'/'.ltrim($request_file, '/.');
                         
                         //if the file does not exists, send 404 not found respond
@@ -46,7 +68,8 @@ class HttpHandler extends MessageHandler {
                                 'Status' => HttpProtocol::$status['404'],
                                 'Version' => $http_message['Version'],
                                 'Content-Type' => 'text/html',
-                                'Content-Length' => strlen($body)
+                                'Content-Length' => strlen($body),
+                                'Date' => date('D, d m Y H:i:s e')
                             ], $body);
                             $connection->sendString($notFoundResponse);
                         } else {
@@ -77,7 +100,8 @@ EOF;
                                         'Status' => HttpProtocol::$status['403'],
                                         'Version' => $http_message['Version'],
                                         'Content-Type' => 'text/html',
-                                        'Content-Length' => strlen($body)
+                                        'Content-Length' => strlen($body),
+                                        'Date' => date('D, d m Y H:i:s e')
                                     ], $body);
                                     $connection->sendString($forbiddenResponse);
                                     return;
@@ -98,7 +122,8 @@ EOF;
                                     'Status' => HttpProtocol::$status['403'],
                                     'Version' => $http_message['Version'],
                                     'Content-Type' => 'text/html',
-                                    'Content-Length' => strlen($body)
+                                    'Content-Length' => strlen($body),
+                                    'Date' => date('D, d m Y H:i:s e')
                                 ], $body);
                                 $connection->sendString($methodNotAllowedResponse);
                             } else {
@@ -112,9 +137,50 @@ EOF;
                                     'Status' => HttpProtocol::$status['200'],
                                     'Version' => $http_message['Version'],
                                     'Content-Type' => $mime,
-                                    'Content-Length' => filesize($request_file)
+                                    'Content-Length' => filesize($request_file),
+                                    'Last-Modified' => date('D, d m Y H:i:s e', filemtime($request_file)),
+                                    'Date' => date('D, d m Y H:i:s e'),
+                                    'Accept-Ranges' => 'bytes'
                                 ], '');
-                                $connection->send($response);
+
+                                //if this is a range request
+                                $start = 0;
+                                if(!empty($http_message['Range'])) {
+                                    if(preg_match('/^bytes=(\d*?)-(\d*?)$/', $http_message['Range'], $matches)) {
+                                        $start = $matches[1];
+                                        $end = $matches[2];
+
+                                        //check whether the range is correct
+                                        if(!empty($end) && $end > filesize($request_file)) {
+                                            //if the range is incorrect, return 416 response
+                                            $body = <<<EOF
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>416 Requested range not satisfiable</title>
+</head><body>
+<h1>Requested range not satisfiable</h1>
+</body></html>
+EOF;
+                                            $rangeNotSatisfiableResponse = new HttpMessage([
+                                                'Code' => '416',
+                                                'Status' => HttpProtocol::$status['416'],
+                                                'Version' => $http_message['Version'],
+                                                'Content-Type' => 'text/html',
+                                                'Content-Length' => strlen($body),
+                                                'Date' => date('D, d m Y H:i:s e')
+                                            ], $body);
+                                            $connection->sendString($rangeNotSatisfiableResponse);
+
+                                            return;
+                                        }
+
+                                        $response['Code'] = '206';
+                                        $response['Status'] = HttpProtocol::$status['206'];
+                                        $response['Content-Length'] = filesize($request_file) - $start;
+                                        $response['Content-Range'] = "bytes $start-$end/" . filesize($request_file);
+                                    }
+                                }
+                                $connection->sendString($response);
 
                                 //send the body
                                 $fd = fopen($request_file, 'rb');
@@ -122,11 +188,16 @@ EOF;
                                     $connection->close();
                                     return;
                                 }
+                                fseek($fd, $start);
                                 $connection->sendFile($fd);
                             }
                         }
                         break;
                     case 'POST':
+                        break;
+                    case 'HEAD':
+                        break;
+                    case 'OPTIONS':
                         break;
                     default:
                         $body = <<<EOF
@@ -142,7 +213,8 @@ EOF;
                         'Status' => HttpProtocol::$status['405'],
                         'Version' => $http_message['Version'],
                         'Content-Type' => 'text/html',
-                        'Content-Length' => strlen($body)
+                        'Content-Length' => strlen($body),
+                        'Date' => date('D, d m Y H:i:s e')
                     ], $body);
                     $connection->sendString($methodNotAllowedResponse);
                 }
@@ -165,7 +237,8 @@ EOF;
                 'Status' => HttpProtocol::$status['400'],
                 'Version' => $http_message['Version'],
                 'Content-Type' => 'text/html',
-                'Content-Length' => strlen($body)
+                'Content-Length' => strlen($body),
+                'Date' => date('D, d m Y H:i:s e')
             ], $body);
             $connection->sendString($badRequestResponse);
             $connection->close();

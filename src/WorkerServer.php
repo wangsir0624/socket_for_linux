@@ -34,7 +34,7 @@ class WorkerServer extends Worker {
      * timezone
      * @var string
      */
-    public $timezone = 'Asia/Chongqing';
+    public $timezone = 'GMT';
 
     /**
      * the worker proccess ID array

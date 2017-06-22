@@ -131,7 +131,7 @@ class HttpProtocol implements ProtocolInterface {
      * @return bool
      */
     protected static function validateRequest($request) {
-        $pattern = '/^(?:GET|POST) .*? HTTP\/1\.[10]\r\n(?:.*?\: .*?\r\n)*?\r\n/mi';
+        $pattern = '/^(?:GET|POST|PUT|HEAD|DELETE|OPTIONS|TRACE|CONNECT|LINK|UNLINE) .*? HTTP\/1\.[10]\r\n(?:.*?\: .*?\r\n)*?\r\n/mi';
 
         return preg_match($pattern, $request);
     }

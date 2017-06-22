@@ -89,7 +89,7 @@ class Connection implements ConnectionInterface {
             $writeLen = 0;
             while($writeLen < $len) {
                 $data = @fwrite($this->stream, substr($buffer, $writeLen, 8192), 8192);
-                if($data === false) {
+                if(!$data) {
                     return $writeLen;
                 }
 

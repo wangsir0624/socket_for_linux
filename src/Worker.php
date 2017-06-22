@@ -42,6 +42,12 @@ class Worker {
     private $port;
 
     /**
+     * allowed http methods
+     * @var array
+     */
+    protected $methods = ['GET', 'POST', 'HEAD', 'OPTIONS'];
+
+    /**
      * MIME types
      * @var array
      */
@@ -264,5 +270,13 @@ class Worker {
         }
 
         return isset($this->hosts[$host]) ? $this->hosts[$host] : (isset($this->hosts['default']) ? $this->hosts['default'] : []);
+    }
+
+    /**
+     * get the allowed http methods
+     * @return array
+     */
+    public function allowedMethods() {
+        return $this->methods;
     }
 }
