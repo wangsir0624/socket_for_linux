@@ -36,6 +36,18 @@ class Connection implements ConnectionInterface {
     public $recv_buffer_size = 1048576;
 
     /**
+     * the send buffer
+     * @var string
+     */
+    public $send_buffer = '';
+
+    /**
+     * the send file handlers
+     * @var array
+     */
+    public $fds = [];
+
+    /**
      * the size of the current package
      * @var int
      */
@@ -77,8 +89,8 @@ class Connection implements ConnectionInterface {
             $writeLen = 0;
             while($writeLen < $len) {
                 $data = @fwrite($this->stream, substr($buffer, $writeLen, 8192), 8192);
-                if(!$data) {
-                    continue;
+                if($data === false) {
+                    return $writeLen;
                 }
 
                 $writeLen += $data;
@@ -88,6 +100,83 @@ class Connection implements ConnectionInterface {
         }
 
         return 0;
+    }
+
+    /**
+     * send string to the client
+     * @param mixed $buffer
+     * @param bool $raw  whether encode the buffer before sending
+     */
+    public function sendString($buffer, $raw = false) {
+        if($buffer) {
+            if(!$raw) {
+                $protocol = $this->server->protocol;
+                $buffer = $protocol::encode($buffer, $this);
+            }
+
+            $writeLen = $this->send($buffer, true);
+            if($writeLen < strlen($buffer)) {
+                if($this->send_buffer == '') {
+                    call_user_func(array($this, 'onSendBufferNotEmpty'));
+                }
+
+                $this->send_buffer .= substr($buffer, $writeLen);
+            }
+        }
+    }
+
+    /**
+     * send file to the client
+     * @param resource $fd  the file handler
+     */
+    public function sendFile($fd) {
+        if($this->send_buffer == '') {
+            call_user_func(array($this, 'onSendBufferNotEmpty'));
+        }
+
+        $this->fds[] = $fd;
+    }
+
+    /**
+     * write the connection send buffer to the socket write buffer
+     */
+    public function flushSendBuffer() {
+        $writeLen = $this->send($this->send_buffer, true);
+        $this->send_buffer = substr($this->send_buffer, $writeLen);
+
+        //if the send buffer is empty, cancel monitoring the write event
+        if($this->send_buffer == '') {
+            call_user_func(array($this, 'onSendBufferEmpty'));
+        }
+    }
+
+    /**
+     * called when the connection send buffer is empty
+     */
+    public function onSendBufferEmpty() {
+        //when the send buffer is empty, send the file content
+        foreach($this->fds as $key => $fd) {
+            if(feof($fd)) {
+                fclose($fd);
+                unset($this->fds[$key]);
+                continue;
+            }
+
+            $this->send_buffer .= fread($fd, 8192);
+        }
+
+        //if the send buffer is empty, cancel monitoring the write event
+        if($this->send_buffer == '') {
+            $this->server->loop->delete($this->stream, EventLoopInterface::EV_WRITE);
+        }
+    }
+
+    /**
+     * called when the connection send buffer is not empty
+     */
+    public function onSendBufferNotEmpty() {
+        //monitoring for write event
+        $this->server->loop->add($this->stream, EventLoopInterface::EV_WRITE, array($this, 'flushSendBuffer'));
     }
 
     /**

@@ -130,7 +130,7 @@ class HttpProtocol implements ProtocolInterface {
      * @param string $request
      * @return bool
      */
-    public static function validateRequest($request) {
+    protected static function validateRequest($request) {
         $pattern = '/^(?:GET|POST) .*? HTTP\/1\.[10]\r\n(?:.*?\: .*?\r\n)*?\r\n/mi';
 
         return preg_match($pattern, $request);
@@ -141,7 +141,7 @@ class HttpProtocol implements ProtocolInterface {
      * @param string $header  the header string
      * @return array
      */
-    public static function parseHeader($header) {
+    protected static function parseHeader($header) {
         $headers = array();
 
         $header_lines = explode("\r\n", $header);
@@ -153,15 +153,5 @@ class HttpProtocol implements ProtocolInterface {
         });
 
         return $headers;
-    }
-
-    /**
-     * send the response to the client
-     * @param HttpMessage $message
-     * @param ConnectionInterface $connection
-     * @return int  the bytes send
-     */
-    public function respond(HttpMessage $message, ConnectionInterface $connection) {
-        $connection->send($message);
     }
 }

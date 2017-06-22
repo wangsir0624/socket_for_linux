@@ -35,7 +35,9 @@ class HttpHandler extends MessageHandler {
 
                         //get the request file path
                         $uri = $http_message['Uri'];
-                        $request_file = rtrim($host_config['root'], '/').'/'.ltrim($uri, '/.');
+                        list($request_file, $query_string) = explode('?', $uri);
+                        $request_file = rtrim($host_config['root'], '/').'/'.ltrim($request_file, '/.');
+                        
                         //if the file does not exists, send 404 not found respond
                         if(!file_exists($request_file)) {
                             $body = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\"><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL $uri was not found on this server.</p></body></html>";
@@ -46,7 +48,7 @@ class HttpHandler extends MessageHandler {
                                 'Content-Type' => 'text/html',
                                 'Content-Length' => strlen($body)
                             ], $body);
-                            HttpProtocol::respond($notFoundResponse, $connection);
+                            $connection->sendString($notFoundResponse);
                         } else {
                             if(is_dir($request_file)) {
                                 $index = @$host_config['index'];
@@ -70,14 +72,15 @@ class HttpHandler extends MessageHandler {
 <h1>Forbidden</h1>
 </body></html>
 EOF;
-                                    $methodNotAllowedResponse = new HttpMessage([
+                                    $forbiddenResponse = new HttpMessage([
                                         'Code' => '403',
                                         'Status' => HttpProtocol::$status['403'],
                                         'Version' => $http_message['Version'],
                                         'Content-Type' => 'text/html',
                                         'Content-Length' => strlen($body)
                                     ], $body);
-                                    HttpProtocol::respond($methodNotAllowedResponse, $connection);
+                                    $connection->sendString($forbiddenResponse);
+                                    return;
                                 }
                             }
 
@@ -97,7 +100,7 @@ EOF;
                                     'Content-Type' => 'text/html',
                                     'Content-Length' => strlen($body)
                                 ], $body);
-                                HttpProtocol::respond($methodNotAllowedResponse, $connection);
+                                $connection->sendString($methodNotAllowedResponse);
                             } else {
                                 $ext = pathinfo($request_file, PATHINFO_EXTENSION);
                                 //get the mime type
@@ -111,7 +114,7 @@ EOF;
                                     'Content-Type' => $mime,
                                     'Content-Length' => filesize($request_file)
                                 ], '');
-                                HttpProtocol::respond($response, $connection);
+                                $connection->send($response);
 
                                 //send the body
                                 $fd = fopen($request_file, 'rb');
@@ -119,9 +122,7 @@ EOF;
                                     $connection->close();
                                     return;
                                 }
-                                while (!feof($fd)) {
-                                    $connection->send(fread($fd, 8192), true);
-                                }
+                                $connection->sendFile($fd);
                             }
                         }
                         break;
@@ -143,7 +144,7 @@ EOF;
                         'Content-Type' => 'text/html',
                         'Content-Length' => strlen($body)
                     ], $body);
-                    HttpProtocol::respond($methodNotAllowedResponse, $connection);
+                    $connection->sendString($methodNotAllowedResponse);
                 }
 
                 if (!empty($connection->recv_buffer)) {
@@ -166,7 +167,7 @@ EOF;
                 'Content-Type' => 'text/html',
                 'Content-Length' => strlen($body)
             ], $body);
-            HttpProtocol::respond($badRequestResponse, $connection);
+            $connection->sendString($badRequestResponse);
             $connection->close();
         }
     }
