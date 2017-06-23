@@ -257,7 +257,7 @@ class WebSocketProtocol implements ProtocolInterface {
 
         //if the handshake request is invalid, handshake fails and return a 400 response to the client
         if(!self::validateHandshakeRequest($buffer)) {
-            $connection->send("HTTP/1.1 400 Bad Request\r\n\r\nInvalid handshake data for websocket.", true);
+            $connection->sendString("HTTP/1.1 400 Bad Request\r\n\r\nInvalid handshake data for websocket.", true);
 
             if(is_callable($connection->server->onError)) {
                 call_user_func($connection->server->onError, $connection, 'Invalid handshake data for websocket.');
@@ -290,7 +290,7 @@ class WebSocketProtocol implements ProtocolInterface {
         $handshake_response .= "Sec-Websocket-Accept: $sec_websocket_accept\r\n";
         $handshake_response .= "\r\n";
 
-        if($connection->send($handshake_response, true)) {
+        if($connection->sendString($handshake_response, true)) {
             $connection->handshaked = true;
             $connection->tmp_all_frame_len = 0;
             $connection->tmp_frame_len = 0;

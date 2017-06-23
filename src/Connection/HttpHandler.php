@@ -4,6 +4,7 @@ namespace Wangjian\Socket\Connection;
 use Wangjian\Socket\Exception\BadRequestException;
 use Wangjian\Socket\Protocol\HttpProtocol;
 use Wangjian\Socket\Protocol\HttpMessage;
+use Wangjian\Socket\EventLoop\EventLoopInterface;
 
 class HttpHandler extends MessageHandler {
     public function handleMessage(ConnectionInterface $connection) {
@@ -17,11 +18,36 @@ class HttpHandler extends MessageHandler {
             $connection->current_package_size = $protocol::input($connection->recv_buffer, $connection);
 
             if ($connection->current_package_size != 0) {
+                //update the requests
+                $connection->requests++;
+
                 $buffer = substr($connection->recv_buffer, 0, $connection->current_package_size);
                 $connection->recv_buffer = substr($connection->recv_buffer, $connection->current_package_size);
                 $connection->current_package_size = 0;
 
                 $http_message = $protocol::decode($buffer, $connection);
+
+                //keep-alive
+                if($http_message['connection'] == 'close') {
+                    $connection->timeout = time();
+                } else {
+                    $keepalive = $http_message['Keep-Alive'];
+                    if(!empty($keepalive)) {
+                        $keepalives = [];
+                        foreach(explode(', ', $keepalive) as $item) {
+                            list($key, $value) = explode('=', $item);
+                            $keepalives[$key] = $value;
+                        }
+                    }
+
+                    if(!empty($keepalives['timeout'])) {
+                        $connection->timeout = max($connection->timeout, $keepalives['timeout'] + time());
+                    }
+
+                    if(!empty($keepalives['max'])) {
+                        $connection->max_requests = max($connection->max_requests, $keepalives['max']);
+                    }
+                }
 
                 //check whether the method is allowed
                 if(!in_array($http_message['Method'], $connection->server->allowedMethods())) {
@@ -146,7 +172,7 @@ EOF;
                                 //if this is a range request
                                 $start = 0;
                                 if(!empty($http_message['Range'])) {
-                                    if(preg_match('/^bytes=(\d*?)-(\d*?)$/', $http_message['Range'], $matches)) {
+                                    if(preg_match('/^bytes=(\d*?)-(\d*?)$/i', $http_message['Range'], $matches)) {
                                         $start = $matches[1];
                                         $end = $matches[2];
 
@@ -235,7 +261,7 @@ EOF;
             $badRequestResponse = new HttpMessage([
                 'Code' => '400',
                 'Status' => HttpProtocol::$status['400'],
-                'Version' => $http_message['Version'],
+                'Version' => 'HTTP/1.1',
                 'Content-Type' => 'text/html',
                 'Content-Length' => strlen($body),
                 'Date' => date('D, d m Y H:i:s e')

@@ -84,10 +84,10 @@ class Worker {
     public $loop;
 
     /**
-     * the accept timeout
+     * the connection timeout
      * @var int
      */
-    public $connectionTimeout = 5;
+    public $connectionTimeout = 60;
 
     /**
      * Application protocol classname
@@ -151,6 +151,7 @@ class Worker {
      */
     public function listen() {
         $this->loop->add($this->stream, EventLoopInterface::EV_READ, array($this, 'handleConnection'));
+        $this->loop->add(5, EventLoopInterface::EV_TIMER, array($this, 'clearTimedOutConnections'));
         $this->loop->run();
     }
 
@@ -191,10 +192,13 @@ class Worker {
     }
 
     /**
-     * set the accept timeout
-     * @param $timeout  timeout in seconds
+     * clear timed out connections
      */
-    public function setConnectionTimeout($timeout) {
-        $this->connectionTimeout = $timeout;
+    public function clearTimedOutConnections() {
+        foreach($this->connections as $connection) {
+            if(($connection->timedOut() || $connection->tooManyRequests()) && $connection->isSendBufferEmpty()) {
+                $connection->close();
+            }
+        }
     }
 }

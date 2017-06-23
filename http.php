@@ -5,10 +5,13 @@ require_once __DIR__.'/vendor/autoload.php';
 $server = new \Wangjian\Socket\WorkerServer('http://115.29.198.111:11111');
 
 //配置worker进程数
-$server->wokers = 2;
+$server->wokers = 4;
 
 //服务器是否以守护进程方式运行
 $server->deamon = false;
+
+//连接的timeout值，默认为60秒
+$server->timeout = 60;
 
 //服务器配置
 $server->hosts = array(

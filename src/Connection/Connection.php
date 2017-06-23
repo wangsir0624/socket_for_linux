@@ -39,13 +39,13 @@ class Connection implements ConnectionInterface {
      * the send buffer
      * @var string
      */
-    public $send_buffer = '';
+    protected $send_buffer = '';
 
     /**
      * the send file handlers
      * @var array
      */
-    public $fds = [];
+    protected $fds = [];
 
     /**
      * the size of the current package
@@ -54,12 +54,36 @@ class Connection implements ConnectionInterface {
     public $current_package_size;
 
     /**
+     * the connection lifetime
+     * @var int
+     */
+    public $timeout = 0;
+
+    /**
+     * the max requests
+     * @var int
+     */
+    public $max_requests = 0;
+
+    /**
+     * the current requests accepted
+     * @var int
+     */
+    public $requests = 0;
+
+    /**
+     * the timestamp when the connection was created
+     * @var int
+     */
+    protected $connected_at;
+
+    /**
      * constructor
      * @param ServerInterface $server
      */
     public function __construct($server) {
         $this->server = $server;
-        $this->stream = @stream_socket_accept($this->server->stream, $this->server->connectionTimeout, $peername);
+        $this->stream = @stream_socket_accept($this->server->stream, 5, $peername);
 
         if(!$this->stream) {
             if(is_callable($this->server->onError)) {
@@ -70,6 +94,7 @@ class Connection implements ConnectionInterface {
         }
 
         stream_set_read_buffer($this->stream, 0);
+        $this->connected_at = $this->last_recv_time = time();
     }
 
     /**
@@ -78,7 +103,7 @@ class Connection implements ConnectionInterface {
      * @param string $raw  whether encode the buffer with the protocol
      * @return int the length of send data
      */
-    public function send($buffer, $raw = false) {
+    protected function send($buffer, $raw = false) {
         if($buffer) {
             if(!$raw) {
                 $protocol = $this->server->protocol;
@@ -89,7 +114,12 @@ class Connection implements ConnectionInterface {
             $writeLen = 0;
             while($writeLen < $len) {
                 $data = @fwrite($this->stream, substr($buffer, $writeLen, 8192), 8192);
-                if(!$data) {
+                if($data === false) {
+                    //return when the socket write buffer is empty
+                    return $writeLen;
+                } else if($data === 0) {
+                    //close the socket when the client socket is closed
+                    $this->close();
                     return $writeLen;
                 }
 
@@ -177,6 +207,54 @@ class Connection implements ConnectionInterface {
     public function onSendBufferNotEmpty() {
         //monitoring for write event
         $this->server->loop->add($this->stream, EventLoopInterface::EV_WRITE, array($this, 'flushSendBuffer'));
+    }
+
+    /**
+     * check whether the send buffer of the connection is empty
+     * @return bool
+     */
+    public function isSendBufferEmpty() {
+        if($this->send_buffer != '') {
+            return false;
+        }
+
+        foreach($this->fds as $fd) {
+            if(!feof($fd)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * whether the connection is timed out
+     * @return bool
+     */
+    public function timedOut() {
+        if($this->timeout > 0) {
+            if(time() >= $this->timeout) {
+                return true;
+            }
+        } else {
+            if(time() >= ($this->connected_at + $this->server->connectionTimeout)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * whether the connection has processed too many requests
+     * @return bool
+     */
+    public function tooManyRequests() {
+        if($this->max_requests > 0 && $this->requests >= $this->max_requests) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

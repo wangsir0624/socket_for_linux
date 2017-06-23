@@ -10,6 +10,9 @@ $server->wokers = 2;
 //服务器是否以守护进程方式运行
 $server->deamon = false;
 
+//连接的timeout值，默认为60秒
+$server->timeout = 3600;
+
 //服务器接受客户端连接时调用的回调函数
 $server->onConnection = function($connection) {
     $pid = posix_getpid();
@@ -19,7 +22,7 @@ $server->onConnection = function($connection) {
 //服务器接受接收客户端消息时触发的回调函数
 $server->onMessage = function($connection, $message) {
     echo "message from client: $message\r\n";
-    $connection->send($message);
+    $connection->sendString($message);
 };
 
 //服务器连接出错时触发的回调函数

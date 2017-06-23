@@ -12,6 +12,9 @@ class WebSocketHandler extends MessageHandler {
         $connection->current_package_size = $protocol::input($connection->recv_buffer, $connection);
 
         if($connection->current_package_size != 0) {
+            //update the requests
+            $connection->requests++;
+
             $buffer = substr($connection->recv_buffer, 0, $connection->current_package_size);
             $connection->recv_buffer = substr($connection->recv_buffer, $connection->current_package_size);
             $connection->current_package_size = 0;
