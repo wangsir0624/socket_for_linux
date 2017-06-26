@@ -10,21 +10,9 @@ use SplObjectStorage;
 use Wangjian\Socket\EventLoop\EventLoopFactory;
 use Wangjian\Socket\Protocol\WebSocketProtocol;
 use Wangjian\Socket\Protocol\HttpProtocol;
-use Wangjian\Socket\Connection\HttpHandler;
-use Wangjian\Socket\Connection\WebSocketHandler;
+use Wangjian\Socket\Module\MessageModule\MessageHandler;
 
 class Worker {
-    use HttpTrait;
-
-    /**
-     * the supported protocols
-     * @const array
-     */
-    protected static $protocols = array(
-        'ws' => WebSocketProtocol::class,
-        'http' => HttpProtocol::class
-    );
-
     /**
      * the server socket stream
      * @var resource
@@ -90,36 +78,21 @@ class Worker {
     public $connectionTimeout = 60;
 
     /**
-     * Application protocol classname
-     * @var string
+     * the message handler
+     * @var MessageHandler
      */
-    public $protocol;
+    public $handler;
+
 
     /**
      * constructor
-     * @param string uri the uri is like this: scheme//ip:port. for example, tcp://127.0.0.1:8000
+     * @param string $ip
+     * @param int port
      * @return ServerInterface
      */
-    public function __construct($uri) {
-        //parse the uri
-        $schema = substr($uri, 0, strpos($uri, "://"));
-        $address = substr($uri, strpos($uri, "://")+3);
-        list($ip, $port) = explode(':', $address);
-
-        //if the uri is incorrect, throw an InvalidArgumentException
-        if(empty($schema) || empty($ip) || empty($port)) {
-            throw new InvalidArgumentException('the argument is not correct.');
-        }
-
-        //choose the protocol according to the sheme
-        $protocolName = @self::$protocols[$schema];
-        if(empty($protocolName)) {
-            throw new RuntimeException('unsupported application protocol.');
-        }
-
+    public function __construct($ip, $port) {
         $this->ip = $ip;
         $this->port = $port;
-        $this->protocol = $protocolName;
         $this->loop = EventLoopFactory::createLoop();
         $this->connections = new SplObjectStorage();
     }
@@ -166,16 +139,6 @@ class Worker {
         }
         $this->sm->increment('current_connections');
         $this->sm->increment('total_connections');
-
-        //set the message handler
-        switch($this->protocol) {
-            case WebSocketProtocol::class:
-                $connection->handler = new WebSocketHandler;
-                break;
-            case HttpProtocol::class:
-                $connection->handler = new HttpHandler;
-                break;
-        }
 
         $this->connections->attach($connection);
         stream_set_blocking($connection->stream, 0);

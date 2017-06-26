@@ -1,7 +1,16 @@
 <?php
 namespace Wangjian\Socket;
 
-Trait HttpTrait {
+use Wangjian\Socket\Protocol\HttpProtocol;
+use Wangjian\Socket\Module\MessageModule\HttpHandler;
+
+class HttpServer extends WorkerServer {
+    /**
+     * Application protocol classname
+     * @var string
+     */
+    public $protocol = HttpProtocol::class;
+
     /**
      * allowed http methods
      * @var array
@@ -37,6 +46,11 @@ Trait HttpTrait {
      * @var array
      */
     public $hosts = array();
+
+    public function __construct($ip, $port) {
+        parent::__construct($ip, $port);
+        $this->handler = new HttpHandler;
+    }
 
     /**
      * add Mime types

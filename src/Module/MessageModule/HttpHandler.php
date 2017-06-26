@@ -1,10 +1,11 @@
 <?php
-namespace Wangjian\Socket\Connection;
+namespace Wangjian\Socket\Module\MessageModule;
 
 use Wangjian\Socket\Exception\BadRequestException;
 use Wangjian\Socket\Protocol\HttpProtocol;
 use Wangjian\Socket\Protocol\HttpMessage;
 use Wangjian\Socket\EventLoop\EventLoopInterface;
+use Wangjian\Socket\Connection\ConnectionInterface;
 
 class HttpHandler extends MessageHandler {
     public function handleMessage(ConnectionInterface $connection) {
@@ -73,6 +74,7 @@ EOF;
 
                 //handle the request
                 switch($http_message['Method']) {
+                    case 'HEAD':
                     case 'GET':
                         //get the host configuration
                         $host_config = $connection->server->getHostConfig($http_message['Host']);
@@ -88,7 +90,7 @@ EOF;
                         
                         //if the file does not exists, send 404 not found respond
                         if(!file_exists($request_file)) {
-                            $body = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\"><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL $uri was not found on this server.</p></body></html>";
+                            $body = $http_message['Method'] == 'HEAD' ? '' : "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\"><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL $uri was not found on this server.</p></body></html>";
                             $notFoundResponse = new HttpMessage([
                                 'Code' => '404',
                                 'Status' => HttpProtocol::$status['404'],
@@ -113,7 +115,7 @@ EOF;
                                 if(is_file($tmp_file)) {
                                     $request_file = $tmp_file;
                                 } else {
-                                    $body = <<<EOF
+                                    $body = $http_message['Method'] == 'HEAD' ? '' : <<<EOF
 <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
 <html><head>
 <title>403 Forbidden</title>
@@ -135,7 +137,7 @@ EOF;
                             }
 
                             if(!is_readable($request_file)) {
-                                $body = <<<EOF
+                                $body = $http_message['Method'] == 'HEAD' ? '' : <<<EOF
 <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
 <html><head>
 <title>403 Forbidden</title>
@@ -179,7 +181,7 @@ EOF;
                                         //check whether the range is correct
                                         if(!empty($end) && $end > filesize($request_file)) {
                                             //if the range is incorrect, return 416 response
-                                            $body = <<<EOF
+                                            $body = $http_message['Method'] == 'HEAD' ? '' : <<<EOF
 <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
 <html><head>
 <title>416 Requested range not satisfiable</title>
@@ -208,22 +210,30 @@ EOF;
                                 }
                                 $connection->sendString($response);
 
-                                //send the body
-                                $fd = fopen($request_file, 'rb');
-                                if (!$fd) {
-                                    $connection->close();
-                                    return;
+                                if($http_message['Method'] != 'HEAD') {
+                                    //send the body
+                                    $fd = fopen($request_file, 'rb');
+                                    if (!$fd) {
+                                        $connection->close();
+                                        return;
+                                    }
+                                    fseek($fd, $start);
+                                    $connection->sendFile($fd);
                                 }
-                                fseek($fd, $start);
-                                $connection->sendFile($fd);
                             }
                         }
                         break;
                     case 'POST':
                         break;
-                    case 'HEAD':
-                        break;
                     case 'OPTIONS':
+                        $optionsResponse = new HttpMessage([
+                            'Code' => '200',
+                            'Status' => HttpProtocol::$status['200'],
+                            'Version' => $http_message['Version'],
+                            'Date' => date('D, d m Y H:i:s e'),
+                            'Allow' => implode(', ', $connection->server->allowedMethods())
+                        ], '');
+                        $connection->sendString($optionsResponse);
                         break;
                     default:
                         $body = <<<EOF

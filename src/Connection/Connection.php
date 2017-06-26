@@ -18,12 +18,6 @@ class Connection implements ConnectionInterface {
     public $server;
 
     /**
-     * the message handler
-     * @var MessageHandler
-     */
-    public $handler;
-
-    /**
      * receive buffer
      * @var string
      */
@@ -160,7 +154,7 @@ class Connection implements ConnectionInterface {
      * @param resource $fd  the file handler
      */
     public function sendFile($fd) {
-        if($this->send_buffer == '') {
+        if($this->send_buffer == '' && empty($this->fds)) {
             call_user_func(array($this, 'onSendBufferNotEmpty'));
         }
 
@@ -193,6 +187,7 @@ class Connection implements ConnectionInterface {
             }
 
             $this->send_buffer .= fread($fd, 8192);
+            break;
         }
 
         //if the send buffer is empty, cancel monitoring the write event
@@ -274,7 +269,7 @@ class Connection implements ConnectionInterface {
      * called when the connection receive the client data
      */
     public function handleMessage() {
-        $this->handler->handleMessage($this);
+        $this->server->handler->handleMessage($this);
     }
 
     /**

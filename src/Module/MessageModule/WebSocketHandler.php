@@ -1,8 +1,13 @@
 <?php
-namespace Wangjian\Socket\Connection;
+namespace Wangjian\Socket\Module\MessageModule;
+
+use Wangjian\Socket\Connection\ConnectionInterface;
 
 class WebSocketHandler extends MessageHandler {
     public function handleMessage(ConnectionInterface $connection) {
+        //update the connection timeout
+        $connection->timeout = time() + $connection->server->connectionTimeout;
+
         $buffer = fread($connection->stream, $connection->recv_buffer_size);
 
         $connection->recv_buffer .= $buffer;
