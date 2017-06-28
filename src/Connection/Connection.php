@@ -140,7 +140,7 @@ class Connection implements ConnectionInterface {
 
             $writeLen = $this->send($buffer, true);
             if($writeLen < strlen($buffer)) {
-                if($this->send_buffer == '') {
+                if($this->isSendBufferEmpty()) {
                     call_user_func(array($this, 'onSendBufferNotEmpty'));
                 }
 
@@ -154,7 +154,7 @@ class Connection implements ConnectionInterface {
      * @param resource $fd  the file handler
      */
     public function sendFile($fd) {
-        if($this->send_buffer == '' && empty($this->fds)) {
+        if($this->isSendBufferEmpty()) {
             call_user_func(array($this, 'onSendBufferNotEmpty'));
         }
 
@@ -165,11 +165,25 @@ class Connection implements ConnectionInterface {
      * write the connection send buffer to the socket write buffer
      */
     public function flushSendBuffer() {
+        //when the send buffer is empty, send the file content
+        if($this->send_buffer == '') {
+            foreach ($this->fds as $key => $fd) {
+                if (feof($fd)) {
+                    fclose($fd);
+                    unset($this->fds[$key]);
+                    continue;
+                }
+
+                $this->send_buffer .= fread($fd, 8192);
+                break;
+            }
+        }
+
         $writeLen = $this->send($this->send_buffer, true);
         $this->send_buffer = substr($this->send_buffer, $writeLen);
 
         //if the send buffer is empty, cancel monitoring the write event
-        if($this->send_buffer == '') {
+        if($this->isSendBufferEmpty()) {
             call_user_func(array($this, 'onSendBufferEmpty'));
         }
     }
@@ -178,22 +192,7 @@ class Connection implements ConnectionInterface {
      * called when the connection send buffer is empty
      */
     public function onSendBufferEmpty() {
-        //when the send buffer is empty, send the file content
-        foreach($this->fds as $key => $fd) {
-            if(feof($fd)) {
-                fclose($fd);
-                unset($this->fds[$key]);
-                continue;
-            }
-
-            $this->send_buffer .= fread($fd, 8192);
-            break;
-        }
-
-        //if the send buffer is empty, cancel monitoring the write event
-        if($this->send_buffer == '') {
-            $this->server->loop->delete($this->stream, EventLoopInterface::EV_WRITE);
-        }
+        $this->server->loop->delete($this->stream, EventLoopInterface::EV_WRITE);
     }
 
     /**

@@ -17,7 +17,7 @@
 
 ```php
 //初始化一个服务器
-$server = new \Wangjian\Socket\WorkerServer('http://115.29.198.111:11111');
+$server = new \Wangjian\Socket\HttpServer('115.29.198.111', 11111);
 
 //配置worker进程数
 $server->wokers = 4;
@@ -56,7 +56,7 @@ $server->runAll();
 require_once __DIR__.'/vendor/autoload.php';
 
 //初始化一个服务器
-$server = new \Wangjian\Socket\WorkerServer('ws://115.29.198.111:11111');
+$server = new \Wangjian\Socket\WebSocketServer('115.29.198.111', 11111);
 
 //配置worker进程数
 $server->wokers = 2;
