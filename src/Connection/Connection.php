@@ -97,7 +97,7 @@ class Connection implements ConnectionInterface {
      * @param string $raw  whether encode the buffer with the protocol
      * @return int the length of send data
      */
-    protected function send($buffer, $raw = false) {
+    public function send($buffer, $raw = false) {
         if($buffer) {
             if(!$raw) {
                 $protocol = $this->server->protocol;

@@ -290,7 +290,7 @@ class WebSocketProtocol implements ProtocolInterface {
         $handshake_response .= "Sec-Websocket-Accept: $sec_websocket_accept\r\n";
         $handshake_response .= "\r\n";
 
-        if($connection->sendString($handshake_response, true)) {
+        if($connection->send($handshake_response, true)) {
             $connection->handshaked = true;
             $connection->tmp_all_frame_len = 0;
             $connection->tmp_frame_len = 0;
