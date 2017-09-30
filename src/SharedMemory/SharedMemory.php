@@ -19,6 +19,8 @@ class SharedMemory {
     //whether runs in transaction
     protected $in_transaction;
 
+    protected $writingKey = 'ECapAKs62nogg28a';
+
     /**
      * constructor
      * @param int $key
@@ -45,7 +47,7 @@ class SharedMemory {
         if(!$this->in_transaction) {
             while(1) {
                 @sem_acquire($this->sem, true);
-                if(@shm_get_var($this->shm, crc32('writing'))) {
+                if(@shm_get_var($this->shm, crc32($this->writingKey))) {
                     @sem_release($this->sem);
                     continue;
                 }
@@ -73,13 +75,13 @@ class SharedMemory {
         //the transaction will acquire a mutex, so needn't acquired the mutex when called in a transaction
         if(!$this->in_transaction) {
             sem_acquire($this->sem);
-            shm_put_var($this->shm, crc32('writing'), true);
+            shm_put_var($this->shm, crc32($this->writingKey), true);
         }
 
         $result = shm_put_var($this->shm, crc32($key), $value);
 
         if(!$this->in_transaction) {
-            shm_put_var($this->shm, crc32('writing'), false);
+            shm_put_var($this->shm, crc32($this->writingKey), false);
             sem_release($this->sem);
         }
 
@@ -95,13 +97,13 @@ class SharedMemory {
         //the transaction will acquire a mutex, so needn't acquired the mutex when called in a transaction
         if(!$this->in_transaction) {
             sem_acquire($this->sem);
-            shm_put_var($this->shm, crc32('writing'), true);
+            shm_put_var($this->shm, crc32($this->writingKey), true);
         }
 
         $result = @shm_remove_var($this->shm, crc32($key));
 
         if(!$this->in_transaction) {
-            shm_put_var($this->shm, crc32('writing'), false);
+            shm_put_var($this->shm, crc32($this->writingKey), false);
             sem_release($this->sem);
         }
 
@@ -115,13 +117,13 @@ class SharedMemory {
      */
     public function transction($callback) {
         sem_acquire($this->sem);
-        shm_put_var($this->shm, crc32('writing'), true);
+        shm_put_var($this->shm, crc32($this->writingKey), true);
         $this->in_transaction = true;
 
         $result = call_user_func($callback, $this);
 
         $this->in_transaction = false;
-        shm_put_var($this->shm, crc32('writing'), false);
+        shm_put_var($this->shm, crc32($this->writingKey), false);
         sem_release($this->sem);
 
         return $result;
@@ -134,14 +136,14 @@ class SharedMemory {
      * @return bool  return true on success. when the original value is not a integer, return false
      */
     public function increment($key, $by = 1) {
-        return $this->transction(function() use($key, $by) {
-            $value = $this->get($key);
+        return $this->transction(function($sm) use($key, $by) {
+            $value = $sm->get($key);
 
             if(!is_int($value)) {
                 return false;
             }
 
-            return $this->set($key, $value+(int)$by);
+            return $sm->set($key, $value+(int)$by);
         });
     }
 
@@ -152,14 +154,14 @@ class SharedMemory {
      * @return bool  return true on success. when the original value is not a integer, return false
      */
     public function decrement($key, $by = 1) {
-        return $this->transction(function() use($key, $by) {
-            $value = $this->get($key);
+        return $this->transction(function($sm) use($key, $by) {
+            $value = $sm->get($key);
 
             if(!is_int($value)) {
                 return false;
             }
 
-            return $this->set($key, $value-(int)$by);
+            return $sm->set($key, $value-(int)$by);
         });
     }
 

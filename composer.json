@@ -27,7 +27,7 @@
 
   "autoload-dev": {
     "psr-4": {
-      "Wangjian\\Socket\\Test\\": "test"
+      "Wangjian\\Socket\\Test\\": "tests"
     }
   }
 }
